@@ -119,6 +119,7 @@ void ComputeGaussianGridLocal::compute_local()
   int *const type = atom->type;
   const int ntotal = atom->nlocal + atom->nghost;
 
+  memset(&alocal[0][0], 0, size_local_rows * size_local_cols * sizeof(double));
   int igrid = 0;
   for (int iz = nzlo; iz <= nzhi; iz++)
     for (int iy = nylo; iy <= nyhi; iy++)
@@ -145,10 +146,11 @@ void ComputeGaussianGridLocal::compute_local()
           const double delz = ztmp - x[j][2];
           const double rsq = delx * delx + dely * dely + delz * delz;
           int jtype = type[j];
-          if (rsq < cutsq[jtype][jtype])
-	    gsum += prefacelem[jtype] * exp(-rsq * argfacelem[jtype]);
+          if (rsq < cutsq[jtype][jtype]) {
+	    int icol = size_local_cols_base + jtype - 1; 
+	    alocal[igrid][icol] += prefacelem[jtype] * exp(-rsq * argfacelem[jtype]);
+	  }
         }
-	alocal[igrid][size_local_cols_base] = gsum;
 	igrid++;
       }
 }
