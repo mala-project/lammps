@@ -1,7 +1,7 @@
 # Demonstrate calculation of Gaussian descriptors on a grid
 # The output in dump.glocal shows that for grid points
 # sitting on an atom:
-# val = 1.0/(0.1355*sqrt(2.0*pi)) = 2.94422
+# val = 1.0/(0.1355*sqrt(2.0*pi))**3 = 25.5219
 
 variable 	nrep index 1
 variable 	a index 3.316

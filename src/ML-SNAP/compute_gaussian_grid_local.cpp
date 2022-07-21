@@ -18,6 +18,7 @@
 #include "error.h"
 #include "force.h"
 #include "math_const.h"
+#include "math_special.h"
 #include "memory.h"
 #include "modify.h"
 #include "update.h"
@@ -27,6 +28,7 @@
 
 using namespace LAMMPS_NS;
 using MathConst::MY_2PI;
+using MathSpecial::powint;
 
 ComputeGaussianGridLocal::ComputeGaussianGridLocal(LAMMPS *lmp, int narg, char **arg) :
     ComputeGridLocal(lmp, narg, arg), cutsq(nullptr), radelem(nullptr),
@@ -80,7 +82,7 @@ ComputeGaussianGridLocal::ComputeGaussianGridLocal(LAMMPS *lmp, int narg, char *
   // pre-compute coefficients
   
   for (int i = 0; i < ntypes; i++) {
-    prefacelem[i + 1] = 1.0/(sigmaelem[i + 1] * sqrt(MY_2PI));
+    prefacelem[i + 1] = 1.0/powint(sigmaelem[i + 1] * sqrt(MY_2PI), 3);
     argfacelem[i + 1] = 1.0/(2.0 * sigmaelem[i + 1] * sigmaelem[i + 1]);
   }
 }
