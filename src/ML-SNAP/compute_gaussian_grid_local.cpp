@@ -119,7 +119,6 @@ void ComputeGaussianGridLocal::compute_local()
   int *const type = atom->type;
   const int ntotal = atom->nlocal + atom->nghost;
 
-  memset(&alocal[0][0], 0, size_local_rows * size_local_cols * sizeof(double));
   int igrid = 0;
   for (int iz = nzlo; iz <= nzhi; iz++)
     for (int iy = nylo; iy <= nyhi; iy++)
@@ -130,11 +129,11 @@ void ComputeGaussianGridLocal::compute_local()
         const double ytmp = xgrid[1];
         const double ztmp = xgrid[2];
 
-        // currently, all grid points are type 1
-	// not clear what a better choice would be
+        // Zeroing out the components, which are filled as a sum.
+        for (int icol = size_local_cols_base; icol < size_local_cols; icol++){
+          alocal[igrid][icol] = 0.0;
+        }
 
-        const int itype = 1;
-	double gsum = 0.0;
         for (int j = 0; j < ntotal; j++) {
 
           // check that j is in compute group
@@ -147,12 +146,12 @@ void ComputeGaussianGridLocal::compute_local()
           const double rsq = delx * delx + dely * dely + delz * delz;
           int jtype = type[j];
           if (rsq < cutsq[jtype][jtype]) {
-	    int icol = size_local_cols_base + jtype - 1; 
-	    alocal[igrid][icol] += prefacelem[jtype] * exp(-rsq * argfacelem[jtype]);
-	  }
+          int icol = size_local_cols_base + jtype - 1;
+            alocal[igrid][icol] += prefacelem[jtype] * exp(-rsq * argfacelem[jtype]);
+          }
         }
-	igrid++;
-      }
+	    igrid++;
+  }
 }
 
 /* ----------------------------------------------------------------------
