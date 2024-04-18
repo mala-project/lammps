@@ -24,6 +24,8 @@
 #include "comm.h"
 
 #define BETA_CONST 1.0e-2
+#define BETA_IGRID 1.0e-2
+#define BETA_ICOL 1.0e-2
 
 using namespace LAMMPS_NS;
 
@@ -249,7 +251,7 @@ void PairGrid::compute_beta()
     for (int iy = nylo; iy <= nyhi; iy++)
       for (int ix = nxlo; ix <= nxhi; ix++) {
         for (int icol = 0; icol < ndesc-ndesc_base; icol++)
-          beta[igrid][icol] = BETA_CONST;
+          beta[igrid][icol] = BETA_CONST + BETA_IGRID*igrid + BETA_ICOL*icol;
         igrid++;
       }
 }
