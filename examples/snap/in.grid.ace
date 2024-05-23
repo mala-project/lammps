@@ -51,8 +51,9 @@ pair_coeff      * *
 # define atom and grid computes
 
 compute     bace all pace ${ace_options} 1 0
-compute 	mygrid all pace/grid grid ${ngrid} ${ngrid} ${ngrid}  ${ace_options}
-compute 	mygridlocal all pace/grid/local  grid ${ngrid} ${ngrid} ${ngrid} ${ace_options}
+#compute 	mygrid all pace/grid grid ${ngrid} ${ngrid} ${ngrid}  ${ace_options}
+compute 	mygrid all pace/grid grid ${ngrid} ${ngrid} ${ngrid}  ${ace_options} ugridtype 0
+compute 	mygridlocal all pace/grid/local  grid ${ngrid} ${ngrid} ${ngrid} ${ace_options} ugridtype 0
 fix         bace all ave/time 1 1 1 c_bace[*] file desc_out.dat  mode vector
 #compute 	mygrid all pace/grid  grid ${ngrid} ${ngrid} ${ngrid} ${ace_options}
 #compute 	mygridlocal all pace/grid/local  grid ${ngrid} ${ngrid} ${ngrid}  ${ace_options}

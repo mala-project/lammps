@@ -67,9 +67,20 @@ ComputePACEGridLocal::ComputePACEGridLocal(LAMMPS *lmp, int narg, char **arg) :
 
 
   //read in file with CG coefficients or c_tilde coefficients
+  gridtypeflagl = 1;
 
-  //auto potential_file_name = utils::get_potential_file_path(arg[3]);
+  //read in file with CG coefficients or c_tilde coefficients
   char * potential_file_name = arg[3];
+  int iarg = nargmin;
+
+  while (iarg < narg) {
+    if (strcmp(arg[iarg], "ugridtype") == 0) {
+      if (iarg + 2 > narg) error->all(FLERR, "Illegal compute {} command", style);
+      gridtypeflagl = utils::inumeric(FLERR, arg[iarg + 1], false, lmp);
+      iarg += 2;
+    }
+  }
+  //auto potential_file_name = utils::get_potential_file_path(arg[3]);
   delete aceclimpl->basis_set;
   aceclimpl->basis_set = new ACECTildeBasisSet(potential_file_name);
   cutmax = aceclimpl->basis_set->cutoffmax;
@@ -80,14 +91,15 @@ ComputePACEGridLocal::ComputePACEGridLocal(LAMMPS *lmp, int narg, char **arg) :
   }
 
   //# of rank 1, rank > 1 functions
-
+  int ielem = 0;
+  if (gridtypeflagl){
+    ielem = nelements-1;
+  }
   int n_r1, n_rp = 0;
-  n_r1 = aceclimpl->basis_set->total_basis_size_rank1[0];
-  n_rp = aceclimpl->basis_set->total_basis_size[0];
+  n_r1 = aceclimpl->basis_set->total_basis_size_rank1[ielem];
+  n_rp = aceclimpl->basis_set->total_basis_size[ielem];
 
   int ncoeff = n_r1 + n_rp;
-
-  int iarg = nargmin;
 
   nvalues = ncoeff;
 
@@ -183,9 +195,11 @@ void ComputePACEGridLocal::compute_local()
         // real atom types begin at 2 and reserve type 1 specifically for the
         // grid entries. This will allow us to only evaluate ACE for atoms around
         // a grid point, but with no contributions from other grid points
-
-        const int itype = 1;
-        const int ielem = 0;
+        int ielem = 0;
+        if (gridtypeflagl){
+          ielem = nelements-1;
+        }
+        const int itype = ielem+1;
         delete aceclimpl->ace;
         aceclimpl->ace = new ACECTildeEvaluator(*aceclimpl->basis_set);
         aceclimpl->ace->compute_projections = true;

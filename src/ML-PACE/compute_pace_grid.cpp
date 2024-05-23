@@ -56,7 +56,7 @@ ComputePACEGrid::ComputePACEGrid(LAMMPS *lmp, int narg, char **arg) :
   //int twojmax, switchflag, bzeroflag, bnormflag, wselfallflag;
 
   int ntypes = atom->ntypes;
-  int nargmin = 6 + 2 * ntypes;
+  int nargmin = 4; //6 + 2 * ntypes;
 
   //if (narg < nargmin) error->all(FLERR, "Illegal compute {} command", style);
 
@@ -70,11 +70,21 @@ ComputePACEGrid::ComputePACEGrid(LAMMPS *lmp, int narg, char **arg) :
   parallel_thresh = 8192;
 
   // process required arguments
+  gridtypeflag = 1;
 
   //read in file with CG coefficients or c_tilde coefficients
   char * potential_file_name = arg[3];
+  int iarg = nargmin;
+
+  while (iarg < narg) {
+    if (strcmp(arg[iarg], "ugridtype") == 0) {
+      if (iarg + 2 > narg) error->all(FLERR, "Illegal compute {} command", style);
+      gridtypeflag = utils::inumeric(FLERR, arg[iarg + 1], false, lmp);
+      iarg += 2;
+    }
+  }
+  
   //auto potential_file_name = utils::get_potential_file_path(arg[3]);
-  printf("potential file name (not local): %s \n",potential_file_name);
   delete acecgimpl->basis_set;
   acecgimpl->basis_set = new ACECTildeBasisSet(potential_file_name);
   cutmax = acecgimpl->basis_set->cutoffmax;
@@ -83,6 +93,9 @@ ComputePACEGrid::ComputePACEGrid(LAMMPS *lmp, int narg, char **arg) :
   //# of rank 1, rank > 1 functions
   //assume ielem 0 (only mu0=0 basis functions for grid ACE)
   int ielem = 0;
+  if (gridtypeflag){
+    ielem = nelements-1;
+  }
   int n_r1, n_rp = 0;
   n_r1 = acecgimpl->basis_set->total_basis_size_rank1[ielem];
   n_rp = acecgimpl->basis_set->total_basis_size[ielem];
@@ -93,7 +106,6 @@ ComputePACEGrid::ComputePACEGrid(LAMMPS *lmp, int narg, char **arg) :
 
   // process optional args
 
-  int iarg = nargmin;
 
   nvalues = ncoeff;
 
@@ -183,8 +195,11 @@ void ComputePACEGrid::compute_array()
         // grid entries. This will allow us to only evaluate ACE for atoms around
         // a grid point, but with no contributions from other grid points
 
-        const int itype = 1;
         int ielem = 0;
+        if (gridtypeflag){
+          ielem = nelements-1;
+        }
+        const int itype = ielem+1;
         delete acecgimpl->ace;
         acecgimpl->ace = new ACECTildeEvaluator(*acecgimpl->basis_set);
         acecgimpl->ace->compute_projections = true;

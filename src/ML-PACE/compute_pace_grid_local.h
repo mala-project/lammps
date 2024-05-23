@@ -37,6 +37,7 @@ class ComputePACEGridLocal : public ComputeGridLocal {
   int nmax=0;
   int ninside=0;
   int grid_is_allocated = 0;
+  int gridtypeflagl;
   int ncoeff; // public for kokkos, but could go in the protected block now
 
  protected:
