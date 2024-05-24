@@ -38,9 +38,9 @@ mass        1 35.453
 # define atom compute and grid compute
 
 group 		acegroup type 1
-variable 	rcutfac equal 4.67637
+variable 	rcutfac equal 6.31
 
-variable 	ace_options string "coupling_coefficients.yace"
+variable 	ace_options string "coupling_coefficients_grid.yace"
 		
 
 # build zero potential to satisfy compute sna/atom
@@ -51,27 +51,18 @@ pair_coeff      * *
 # define atom and grid computes
 
 compute     bace all pace ${ace_options} 1 0
-compute 	mygrid all pace/grid grid ${ngrid} ${ngrid} ${ngrid}  ${ace_options} ugridtype 0
-compute 	mygridlocal all pace/grid/local  grid ${ngrid} ${ngrid} ${ngrid} ${ace_options} ugridtype 0
+# NOTE that grid computes here have the unique grid type flag `ugridtype` to "true"
+# When paired with the correct coupling coefficient file, the grid will not mix atoms
+# and grid points in the evaluation of descriptors.
+compute 	mygrid all pace/grid grid ${ngrid} ${ngrid} ${ngrid}  ${ace_options} ugridtype 1
+compute 	mygridlocal all pace/grid/local  grid ${ngrid} ${ngrid} ${ngrid} ${ace_options} ugridtype 1
 fix         bace all ave/time 1 1 1 c_bace[*] file desc_out.dat  mode vector
 
 # define output
 
-variable	B5atom equal c_bace[2][5]
 variable	B5grid equal c_mygrid[8][8]
 
-variable	rmse_global equal "sqrt(   &
-	 (c_mygrid[8][1] - x[2])^2 +      &
-	 (c_mygrid[8][2] - y[2])^2 +      &
-	 (c_mygrid[8][3] - z[2])^2 +      &
-	 (c_mygrid[8][4] - c_bace[2][1])^2 + &
-	 (c_mygrid[8][5] - c_bace[2][2])^2 + &
-	 (c_mygrid[8][6] - c_bace[2][3])^2 + &
-	 (c_mygrid[8][7] - c_bace[2][4])^2 + &
-	 (c_mygrid[8][8] - c_bace[2][5])^2   &
-	 )"
-
-thermo_style	custom step v_B5atom v_B5grid v_rmse_global
+thermo_style	custom step v_B5grid 
 
 # this is the only way to view the local grid
 
