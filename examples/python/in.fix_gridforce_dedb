@@ -36,7 +36,7 @@ variable        rcutfac equal 6.0 # define rcutfac for pairstyle_zero (must be b
 
 variable        ace_options string "coupling_coefficients.yace ugridtype 1"
 
-#velocity        all create 3.0 87287
+velocity        all create 0.001 87287
 
 pair_style      zero ${rcutfac} # null pairstyle so that lammps will still evolve system in time/run computes
 pair_coeff      * *
@@ -49,19 +49,26 @@ neigh_modify    every 1 delay 0 check yes
 #define lammps python command
 python          pre_force_callback file dedb_python.py
 
+fix             1 all nve
 fix             4 all python/acegridforce ${nfreq} pre_force pre_force_callback grid ${ngrid} ${ngrid} ${ngrid} ${ace_options} 
 # the fix can evaluate the energy if linear or quasi-linear model parameters are provided
 #fix_modify      4 energy yes
 compute         mygridlocal all pace/grid/local  grid ${ngrid} ${ngrid} ${ngrid} ${ace_options} 
 
+variable     fsq atom fx^2+fy^2+fz^2
+compute      favsq all reduce ave v_fsq
+
+
 thermo          ${nfreq}
 
 
-
-thermo_style    custom step temp pe etotal press 
+# print the average square force in the output
+thermo_style    custom step temp pe etotal press c_favsq
 
 #You may dump the structure to view the dynamics
 #dump            4 all custom 1 qdump.xyz id type  x y z 
 
-run             0
+run             10
 
+variable fa equal c_favsq
+print "last step average square force ${fa}"
