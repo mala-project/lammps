@@ -51,6 +51,7 @@
 #define INTERFACE_NUMPY 1
 #define INTERFACE_PTR 0
 #define MPI_NUMPY 0
+#define TAG_J_ADD 0
 
 namespace LAMMPS_NS {
 struct ACEFimpl {
@@ -120,7 +121,7 @@ FixPythonAceGridForce::FixPythonAceGridForce(LAMMPS *lmp, int narg, char **arg) 
     error->all(FLERR, "Illegal compute grid command");
 
   ngridglobal = nx * ny * nz;
-  base_array_rows = 0;
+  base_array_rows = 1;
   size_global_array_rows = ngridglobal + base_array_rows;
   //without force
   //size_global_array_rows = ngridglobal + base_array_rows;
@@ -171,6 +172,7 @@ FixPythonAceGridForce::FixPythonAceGridForce(LAMMPS *lmp, int narg, char **arg) 
   set_grid_global();
   set_grid_local();
   allocate_global();
+  size_local_array_rows = ngridlocal + base_array_rows;
 
   // get Python function
   PyUtils::GIL lock;
@@ -268,8 +270,10 @@ void FixPythonAceGridForce::allocate_py_beta()
   if (allocated_py_beta){
     deallocate_py_beta();
   }
-  memory->create(py_beta, size_global_array_rows, ndesc-ndesc_base, "python/acegridforce:py_beta");
-  memory->create(py_beta_contig, size_global_array_rows*(ndesc-ndesc_base), "python/acegridforce:py_beta_contig");
+  memory->create(py_beta, size_local_array_rows, ndesc-ndesc_base, "python/acegridforce:py_beta");
+  memory->create(py_beta_contig, size_local_array_rows*(ndesc-ndesc_base), "python/acegridforce:py_beta_contig");
+  //memory->create(py_beta, size_global_array_rows, ndesc-ndesc_base, "python/acegridforce:py_beta");
+  //memory->create(py_beta_contig, size_global_array_rows*(ndesc-ndesc_base), "python/acegridforce:py_beta_contig");
   allocated_py_beta = 1;
 }
 
@@ -278,8 +282,11 @@ void FixPythonAceGridForce::allocate_global()
   if (allocated_global){
     deallocate_global();
   }
-  memory->create(e_grid, ngridglobal, "python/acegridforce:e_grid");
-  memory->create(e_grid_all, ngridglobal, "python/acegridforce:e_grid_all");
+  memory->create(e_grid, ngridlocal, "python/acegridforce:e_grid");
+  memory->create(e_grid_all, ngridlocal, "python/acegridforce:e_grid_all");
+  memory->create(e_grid_global, ngridglobal, "python/acegridforce:e_grid_global");
+  //memory->create(e_grid, ngridglobal, "python/acegridforce:e_grid");
+  //memory->create(e_grid_all, ngridglobal, "python/acegridforce:e_grid_all");
   allocated_global = 1;
 
 }
@@ -302,6 +309,7 @@ void FixPythonAceGridForce::deallocate_global()
   if (allocated_global){
     memory->destroy(e_grid);
     memory->destroy(e_grid_all);
+    memory->destroy(e_grid_global);
   }
   allocated_global = 0;
 }
@@ -520,6 +528,19 @@ void FixPythonAceGridForce::compute(int eflag, int vflag)
   int * const type = atom->type;
   const int ntotal = atom->nlocal + atom->nghost;
 
+  //zero out forces
+  for (int jk = 0; jk < ntotal; jk++){
+    f[jk][0] =0.;
+    f[jk][1] =0.;
+    f[jk][2] =0.;
+  }
+
+  // zero energy grid arrays
+  for (int ik=0; ik < ngridglobal; ik++){
+    e_grid[ik] = 0.0;
+    e_grid_all[ik] = 0.0;
+  }
+
   // grow grid arrays to match possible # of grid neighbors (analogous to jnum)
   nmax = ntotal + 1;
   grow_grid(nmax);  
@@ -584,7 +605,7 @@ void FixPythonAceGridForce::compute(int eflag, int vflag)
         //      but will be omitted in a later push
         int ninside = 0;
         for (int j = 0; j < ntotal; j++) {
-          if (!(mask[j] & groupbit)) continue;
+          //if (!(mask[j] & groupbit)) continue;
           const double delxlg = xtmp - x[j][0];
           const double delylg = ytmp - x[j][1];
           const double delzlg = ztmp - x[j][2];
@@ -605,11 +626,28 @@ void FixPythonAceGridForce::compute(int eflag, int vflag)
           const double rnormd = sqrt(rsqd);
           const double rnormg = sqrt(rsqg);
           const double rnormx = sqrt(rsqx);
-          if (rnormd < (thiscut) && rnorm > 1.e-20) {
-            gridneigh[ninside][0] = x[j][0];
-            gridneigh[ninside][1] = x[j][1];
-            gridneigh[ninside][2] = x[j][2];
+          //if (rnormd < (thiscut) && rnorm > 1.e-20) {
+          //if (rnorm < (thiscut) && rnorm > 1.e-20) {
+          //if (rnorm < (thiscut) && rnorm > 1.e-20) {
+          //printf("thiscut %f, rnorm %f, rnormd %f, rnormx %f \n ",thiscut,rnorm,rnormd,rnormx);
+          if (rnorm <= (thiscut)  && rnorm > 1.e-20) {
+          //if (rnorm <= (thiscut)  && rnorm > 1.e-20) {
+            //gridneigh[ninside][0] = delxlg;
+            //gridneigh[ninside][1] = delylg;
+            //gridneigh[ninside][2] = delzlg;
+            //
+            gridneigh[ninside][0] = -x[j][0];
+            gridneigh[ninside][1] = -x[j][1];
+            gridneigh[ninside][2] = -x[j][2];
+            //
+            //gridneigh[ninside][0] = x[j][0];
+            //gridneigh[ninside][1] = x[j][1];
+            //gridneigh[ninside][2] = x[j][2];
+            //gridneigh[ninside][0] = delxg;
+            //gridneigh[ninside][1] = delyg;
+            //gridneigh[ninside][2] = delzg;
             gridinside[ninside] = ninside;
+            //gridinside[ninside] = j;
             gridtype[ninside] = jtype;
             ninside++;
           }
@@ -620,32 +658,60 @@ void FixPythonAceGridForce::compute(int eflag, int vflag)
         const int baseind = 0;
 
         gridinside[ninside]=ninside;
-        gridneigh[ninside][0] = xtmp;
+        //gridneigh[ninside][0] = 0.0;
+        //gridneigh[ninside][1] = 0.0;
+        //gridneigh[ninside][2] = 0.0;
+        //gridneigh[ninside][0] = xtmpg; //bad
+        //gridneigh[ninside][1] = ytmpg;
+        //gridneigh[ninside][2] = ztmpg;
+        //
+        gridneigh[ninside][0] = xtmp; //good first
         gridneigh[ninside][1] = ytmp;
         gridneigh[ninside][2] = ztmp;
         gridtype[ninside]=itype;
+        //printf("igrid %d | xtmp %f ytmp %f ztmp %f \n",igrid,xtmp,ytmp,ztmp);
+        //printf("igrid_g %d | xtmpg %f ytmpg %f ztmpg %f \n",igrid_global,xtmpg,ytmpg,ztmpg);
         // perform ACE evaluation with short neighbor list
         acefimpl->ace->resize_neighbours_cache(ninside);
+        //acefimpl->ace->resize_neighbours_cache(ntotal);
         acefimpl->ace->compute_atom(ninside, gridneigh, gridtype, ninside, gridinside);
         Array1D<DOUBLE_TYPE> Bs = acefimpl->ace->projections;
+        //Array2D<DOUBLE_TYPE> forces = acefimpl->ace->neighbours_forces;
         // linear contributions
         for (int icoeff = 0; icoeff < ndesc; icoeff++){
 #if INTERFACE_NUMPY
-          alocal[igrid][ndesc_base + icoeff] += Bs(icoeff);
+          //alocal[igrid][ndesc_base + icoeff] += Bs(icoeff);
+          //e_grid[igrid_global] += Bs(icoeff)*py_beta[0][icoeff];
+          gridlocal[ndesc_base + icoeff][iz][iy][ix] = Bs(icoeff);
           e_grid[igrid_global] += Bs(icoeff)*py_beta[0][icoeff];
 #endif
         }
+        //e_grid[igrid_global] = acefimpl->ace->e_atom;
         // sum over neighbors jj
         // sum over descriptor indices k=iicoeff
         // multiply dE_I/dB_I * dB_I^k/drj
-        for (int jj =0; jj < ninside;jj++){
+        //double fac = 1.0;//1.;//0.5/atom->natoms;
+        //printf("ninside %d ngridglobal %d \n",ninside,ngridglobal);
+        double fac = 1.0/ngridlocal;
+        for (int jj =0; jj < ninside-1;jj++){
+        //for (int jj =0; jj < ntotal;jj++){
           for (int iicoeff = 0; iicoeff < ndesc; iicoeff++){
             DOUBLE_TYPE fx_dB = acefimpl->ace->neighbours_dB(iicoeff,jj,0);
             DOUBLE_TYPE fy_dB = acefimpl->ace->neighbours_dB(iicoeff,jj,1);
             DOUBLE_TYPE fz_dB = acefimpl->ace->neighbours_dB(iicoeff,jj,2);
-            f[jj][0] -= fx_dB *py_beta[igrid_global+base_array_rows][iicoeff];
-            f[jj][1] -= fy_dB *py_beta[igrid_global+base_array_rows][iicoeff];
-            f[jj][2] -= fz_dB *py_beta[igrid_global+base_array_rows][iicoeff];
+#if !TAG_J_ADD
+            f[jj][0] += fac*fx_dB *py_beta[igrid_global+base_array_rows][iicoeff];
+            f[jj][1] += fac*fy_dB *py_beta[igrid_global+base_array_rows][iicoeff];
+            f[jj][2] += fac*fz_dB *py_beta[igrid_global+base_array_rows][iicoeff];
+            //f[atom->tag[jj]][0] -= fx_dB *py_beta[igrid_global+base_array_rows][iicoeff];
+            //f[atom->tag[jj]][1] -= fy_dB *py_beta[igrid_global+base_array_rows][iicoeff];
+            //f[atom->tag[jj]][2] -= fz_dB *py_beta[igrid_global+base_array_rows][iicoeff];
+#endif
+#if TAG_J_ADD
+            f[atom->tag[jj]][0] += fx_dB *py_beta[igrid_global+base_array_rows][iicoeff];
+            f[atom->tag[jj]][1] += fy_dB *py_beta[igrid_global+base_array_rows][iicoeff];
+            f[atom->tag[jj]][2] += fz_dB *py_beta[igrid_global+base_array_rows][iicoeff];
+#endif
           }
         }
         
@@ -653,8 +719,9 @@ void FixPythonAceGridForce::compute(int eflag, int vflag)
       }
 
 #ifdef DEBUG_GRID_FORCE
-  for (int jj =0; jj < atom->nlocal;jj++){
+  for (int jj =0; jj < atom->natoms;jj++){
     printf("tallied forces for atom %d  %f %f %f \n",jj,f[jj][0],f[jj][1],f[jj][2]);
+    //printf("tallied forces for atom %d  %f %f %f \n",jj,f[atom->tag[jj]][0],f[atom->tag[jj]][1],f[atom->tag[jj]][2]);
   }
 #endif
 
@@ -666,11 +733,20 @@ void FixPythonAceGridForce::compute(int eflag, int vflag)
 
 double FixPythonAceGridForce::compute_scalar()
 {
+#if MPI_NUMPY
   MPI_Allreduce(e_grid, e_grid_all, ngridglobal, MPI_DOUBLE, MPI_SUM, world);
   double etot = 0.0;
   for (int kk = 0; kk < ngridglobal; kk++){
     etot += e_grid_all[kk];
   }
+#endif
+#if !MPI_NUMPY
+  double etot = 0.0;
+  for (int kk = 0; kk < ngridglobal; kk++){
+    etot += e_grid[kk]/ngridglobal;
+    //etot += e_grid[kk];
+  }
+#endif
   return etot;
 }
 
@@ -704,9 +780,10 @@ void FixPythonAceGridForce::end_of_step()
 
 void FixPythonAceGridForce::process_pyarr(PyObject* arr)
 {
-  int prank;
+  int prank = 0;
+#if MPI_NUMPY
   MPI_Comm_rank(MPI_COMM_WORLD, &prank);
-
+#endif
   if (prank == 0 ){
  
     double* pybeta = (double*)PyArray_DATA(arr);
@@ -763,7 +840,7 @@ void FixPythonAceGridForce::post_force(int vflag)
 
 void FixPythonAceGridForce::pre_force(int vflag)
 {
-  if (update->ntimestep % nevery != 0) return;
+  //if (update->ntimestep % nevery != 0) return;
 
   PyUtils::GIL lock;
 
@@ -776,10 +853,10 @@ void FixPythonAceGridForce::pre_force(int vflag)
   allocate_grid();
 
   // zero energy grid arrays
-  for (int ik=0; ik < ngridglobal; ik++){
-    e_grid[ik] = 0.0;
-    e_grid_all[ik] = 0.0;
-  }
+  //for (int ik=0; ik < ngridglobal; ik++){
+  //  e_grid[ik] = 0.0;
+  //  e_grid_all[ik] = 0.0;
+  //}
 
   // directly process python beta array
   process_pyarr(result);

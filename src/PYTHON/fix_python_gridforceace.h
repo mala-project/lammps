@@ -71,8 +71,9 @@ class FixPythonAceGridForce : public Fix {
   double **beta;                       // lammps-generated betas for all local grid points in list
   double **py_beta;                    // betas for all local grid points in list
   double *py_beta_contig;              // contiguous beta array from python
-  double *e_grid;                      // energy per grid site (global)
-  double *e_grid_all;                  // energy for all grid sites (global) 
+  double *e_grid;                      // energy per grid site (local)
+  double *e_grid_all;                  // energy for all grid sites (local) 
+  double *e_grid_global;                  // energy for all grid sites (global) 
   double cutmax;                       // max cutoff for radial functions
   int ndesc;                           // # of descriptors
   int ndesc_base;                      // base # of descriptors
@@ -97,6 +98,7 @@ class FixPythonAceGridForce : public Fix {
   int nelements;
   int nmax;
   int size_global_array_rows;               // rows for global grid
+  int size_local_array_rows;                // rows for local grid
   int size_global_array_cols;               // columns for global grid
 
 };
