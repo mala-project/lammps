@@ -80,6 +80,7 @@ class FixPythonAceGridForce : public Fix {
   struct ACEFimpl *acefimpl;           // ace grid implementation from external c++ code
   double ** gridneigh;
   int *gridinside;
+  int *gridj;
   int *gridtype;
 
  private:

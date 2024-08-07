@@ -13,7 +13,7 @@
 ------------------------------------------------------------------------- */
 
 /* ----------------------------------------------------------------------
-   Contributing author: Richard Berger (Temple U)
+   Contributing author: James Goff (Sandia National Laboratories)
 ------------------------------------------------------------------------- */
 
 #include "fix_python_gridforceace.h"
@@ -328,6 +328,7 @@ void FixPythonAceGridForce::deallocate_short()
   if (short_allocated){
     memory->destroy(gridneigh);
     memory->destroy(gridinside);
+    memory->destroy(gridj);
     memory->destroy(gridtype);
   }
   short_allocated=0;
@@ -496,10 +497,12 @@ void FixPythonAceGridForce::grow_grid(int newnmax)
   if (short_allocated) {
     memory->destroy(gridneigh);
     memory->destroy(gridinside);
+    memory->destroy(gridj);
     memory->destroy(gridtype);
   }
   memory->create(gridneigh, nmax, 3, "python/acegridforce:gridneigh");
   memory->create(gridinside, nmax, "python/acegridforce:gridinside");
+  memory->create(gridj, nmax, "python/acegridforce:gridj");
   memory->create(gridtype, nmax, "python/acegridforce:gridtype");
   short_allocated = 1;
   //populate short lists with 0s
@@ -508,6 +511,7 @@ void FixPythonAceGridForce::grow_grid(int newnmax)
     gridneigh[jz][1] = 0.00000000;
     gridneigh[jz][2] = 0.00000000;
     gridinside[jz] = 0;
+    gridj[jz] = 0;
     gridtype[jz] = 0;
   }
   gridlocal_allocated = 1;
@@ -552,22 +556,14 @@ void FixPythonAceGridForce::compute(int eflag, int vflag)
       for (int ix = nxlo; ix <= nxhi; ix++) {
         const int igrid_global = iz * (nx * ny) + iy * nx + ix;
         double xgrid[3];
-        double xgridglobal[3];
+        //double xgridglobal[3];
         grid2x(ix, iy, iz, xgrid);
         const double xtmp = xgrid[0];
         const double ytmp = xgrid[1];
         const double ztmp = xgrid[2];
         const int igrid_g = iz * (nx * ny) + iy * nx + ix;
-        grid2xglobal(igrid_g,xgridglobal);
-        const double xtmpg = xgridglobal[0];
-        const double ytmpg = xgridglobal[1];
-        const double ztmpg = xgridglobal[2];
+        //grid2xglobal(igrid_g,xgridglobal);
         
-        // default, all grid points are type 1
-        // - later we may want to set up lammps_user_pace interface such that the
-        // real atom types begin at 2 and reserve type 1 specifically for the
-        // grid entries. This will allow us to only evaluate ACE for atoms around
-        // a grid point, but with no contributions from other grid points
         int ielem = 0;
         if (gridtypeflagl){
           ielem = nelements-1;
@@ -597,57 +593,23 @@ void FixPythonAceGridForce::compute(int eflag, int vflag)
           }
         }
 
-        // rij[][3] = displacements between atom I and those neighbors
-        // inside = indices of neighbors of I within cutoff
-        // typej = types of neighbors of I within cutoff
-        //
-        // note that extra quantities have been calculated here for debugging purposes
-        //      but will be omitted in a later push
         int ninside = 0;
         for (int j = 0; j < ntotal; j++) {
-          //if (!(mask[j] & groupbit)) continue;
+          if (!(mask[j] & groupbit)) continue;
           const double delxlg = xtmp - x[j][0];
           const double delylg = ytmp - x[j][1];
           const double delzlg = ztmp - x[j][2];
-          const double delxg = xtmpg - x[j][0];
-          const double delyg = ytmpg - x[j][1];
-          const double delzg = ztmpg - x[j][2];
           const double rsq = delxlg * delxlg + delylg * delylg + delzlg * delzlg;
-          const double rsqg = delxg * delxg + delyg * delyg + delzg * delzg;
-          const double rxtmp = x[j][0];
-          const double rytmp = x[j][1];
-          const double rztmp = x[j][2];
-          const double rsqd = rxtmp * rxtmp + rytmp * rytmp + rztmp * rztmp;
-          const double rsqx = pow(rxtmp,2) + pow(rytmp,2) + pow(rztmp,2);
           int jtype = type[j];
           int jelem = map[jtype];
           double thiscut = acefimpl->basis_set->radial_functions->cut(ielem,jelem);
           const double rnorm = sqrt(rsq);
-          const double rnormd = sqrt(rsqd);
-          const double rnormg = sqrt(rsqg);
-          const double rnormx = sqrt(rsqx);
-          //if (rnormd < (thiscut) && rnorm > 1.e-20) {
-          //if (rnorm < (thiscut) && rnorm > 1.e-20) {
-          //if (rnorm < (thiscut) && rnorm > 1.e-20) {
-          //printf("thiscut %f, rnorm %f, rnormd %f, rnormx %f \n ",thiscut,rnorm,rnormd,rnormx);
           if (rnorm <= (thiscut)  && rnorm > 1.e-20) {
-          //if (rnorm <= (thiscut)  && rnorm > 1.e-20) {
-            //gridneigh[ninside][0] = delxlg;
-            //gridneigh[ninside][1] = delylg;
-            //gridneigh[ninside][2] = delzlg;
-            //
-            gridneigh[ninside][0] = -x[j][0];
-            gridneigh[ninside][1] = -x[j][1];
-            gridneigh[ninside][2] = -x[j][2];
-            //
-            //gridneigh[ninside][0] = x[j][0];
-            //gridneigh[ninside][1] = x[j][1];
-            //gridneigh[ninside][2] = x[j][2];
-            //gridneigh[ninside][0] = delxg;
-            //gridneigh[ninside][1] = delyg;
-            //gridneigh[ninside][2] = delzg;
+            gridneigh[ninside][0] = x[j][0];
+            gridneigh[ninside][1] = x[j][1];
+            gridneigh[ninside][2] = x[j][2];
             gridinside[ninside] = ninside;
-            //gridinside[ninside] = j;
+            gridj[ninside] = j;
             gridtype[ninside] = jtype;
             ninside++;
           }
@@ -658,25 +620,14 @@ void FixPythonAceGridForce::compute(int eflag, int vflag)
         const int baseind = 0;
 
         gridinside[ninside]=ninside;
-        //gridneigh[ninside][0] = 0.0;
-        //gridneigh[ninside][1] = 0.0;
-        //gridneigh[ninside][2] = 0.0;
-        //gridneigh[ninside][0] = xtmpg; //bad
-        //gridneigh[ninside][1] = ytmpg;
-        //gridneigh[ninside][2] = ztmpg;
-        //
         gridneigh[ninside][0] = xtmp; //good first
         gridneigh[ninside][1] = ytmp;
         gridneigh[ninside][2] = ztmp;
         gridtype[ninside]=itype;
-        //printf("igrid %d | xtmp %f ytmp %f ztmp %f \n",igrid,xtmp,ytmp,ztmp);
-        //printf("igrid_g %d | xtmpg %f ytmpg %f ztmpg %f \n",igrid_global,xtmpg,ytmpg,ztmpg);
         // perform ACE evaluation with short neighbor list
         acefimpl->ace->resize_neighbours_cache(ninside);
-        //acefimpl->ace->resize_neighbours_cache(ntotal);
         acefimpl->ace->compute_atom(ninside, gridneigh, gridtype, ninside, gridinside);
         Array1D<DOUBLE_TYPE> Bs = acefimpl->ace->projections;
-        //Array2D<DOUBLE_TYPE> forces = acefimpl->ace->neighbours_forces;
         // linear contributions
         for (int icoeff = 0; icoeff < ndesc; icoeff++){
 #if INTERFACE_NUMPY
@@ -686,31 +637,30 @@ void FixPythonAceGridForce::compute(int eflag, int vflag)
           e_grid[igrid_global] += Bs(icoeff)*py_beta[0][icoeff];
 #endif
         }
-        //e_grid[igrid_global] = acefimpl->ace->e_atom;
         // sum over neighbors jj
         // sum over descriptor indices k=iicoeff
-        // multiply dE_I/dB_I * dB_I^k/drj
-        //double fac = 1.0;//1.;//0.5/atom->natoms;
+        // multiply dE_I/dB_I * dB_I^k/drj and add to atom->f 
         //printf("ninside %d ngridglobal %d \n",ninside,ngridglobal);
-        double fac = 1.0/ngridlocal;
-        for (int jj =0; jj < ninside-1;jj++){
-        //for (int jj =0; jj < ntotal;jj++){
+        //double fac = 1.0/ngridglobal;
+        double fac = 1.0;
+        for (int jj =0; jj < ninside;jj++){
+          int mj = gridj[jj];
           for (int iicoeff = 0; iicoeff < ndesc; iicoeff++){
             DOUBLE_TYPE fx_dB = acefimpl->ace->neighbours_dB(iicoeff,jj,0);
             DOUBLE_TYPE fy_dB = acefimpl->ace->neighbours_dB(iicoeff,jj,1);
             DOUBLE_TYPE fz_dB = acefimpl->ace->neighbours_dB(iicoeff,jj,2);
 #if !TAG_J_ADD
-            f[jj][0] += fac*fx_dB *py_beta[igrid_global+base_array_rows][iicoeff];
-            f[jj][1] += fac*fy_dB *py_beta[igrid_global+base_array_rows][iicoeff];
-            f[jj][2] += fac*fz_dB *py_beta[igrid_global+base_array_rows][iicoeff];
+            f[mj][0] -= fac*fx_dB *py_beta[igrid_global+base_array_rows][iicoeff];
+            f[mj][1] -= fac*fy_dB *py_beta[igrid_global+base_array_rows][iicoeff];
+            f[mj][2] -= fac*fz_dB *py_beta[igrid_global+base_array_rows][iicoeff];
             //f[atom->tag[jj]][0] -= fx_dB *py_beta[igrid_global+base_array_rows][iicoeff];
             //f[atom->tag[jj]][1] -= fy_dB *py_beta[igrid_global+base_array_rows][iicoeff];
             //f[atom->tag[jj]][2] -= fz_dB *py_beta[igrid_global+base_array_rows][iicoeff];
 #endif
 #if TAG_J_ADD
-            f[atom->tag[jj]][0] += fx_dB *py_beta[igrid_global+base_array_rows][iicoeff];
-            f[atom->tag[jj]][1] += fy_dB *py_beta[igrid_global+base_array_rows][iicoeff];
-            f[atom->tag[jj]][2] += fz_dB *py_beta[igrid_global+base_array_rows][iicoeff];
+            f[atom->tag[mj]][0] -= fx_dB *py_beta[igrid_global+base_array_rows][iicoeff];
+            f[atom->tag[mj]][1] -= fy_dB *py_beta[igrid_global+base_array_rows][iicoeff];
+            f[atom->tag[mj]][2] -= fz_dB *py_beta[igrid_global+base_array_rows][iicoeff];
 #endif
           }
         }
@@ -743,8 +693,8 @@ double FixPythonAceGridForce::compute_scalar()
 #if !MPI_NUMPY
   double etot = 0.0;
   for (int kk = 0; kk < ngridglobal; kk++){
-    etot += e_grid[kk]/ngridglobal;
-    //etot += e_grid[kk];
+    //etot += e_grid[kk]/ngridglobal;
+    etot += e_grid[kk];
   }
 #endif
   return etot;
