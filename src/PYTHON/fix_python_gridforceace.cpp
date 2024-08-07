@@ -44,14 +44,8 @@
 #define BETA_CONST 1.0e-5
 #define BETA_IGRID 1.0e-6
 #define BETA_ICOL 1.0e-6
-//#define DEBUG_GRID 0
-//#define DEBUG_GRID_FORCE 1
-//#define DEBUG_NUMPY_INTERFACE 1
-#define DEBUG_BETA_INDICES 0
 #define INTERFACE_NUMPY 1
-#define INTERFACE_PTR 0
 #define MPI_NUMPY 0
-#define TAG_J_ADD 0
 
 namespace LAMMPS_NS {
 struct ACEFimpl {
@@ -111,20 +105,18 @@ FixPythonAceGridForce::FixPythonAceGridForce(LAMMPS *lmp, int narg, char **arg) 
   int iarg0 = 6;
   int iarg = iarg0;
   if (strcmp(arg[iarg], "grid") == 0) {
-    if (iarg + 4 > narg) error->all(FLERR, "Illegal compute grid command");
+    if (iarg + 4 > narg) error->all(FLERR, "Illegal fix python/gridforceace grid command");
     nx = utils::inumeric(FLERR, arg[iarg + 1], false, lmp);
     ny = utils::inumeric(FLERR, arg[iarg + 2], false, lmp);
     nz = utils::inumeric(FLERR, arg[iarg + 3], false, lmp);
     if (nx <= 0 || ny <= 0 || nz <= 0) error->all(FLERR, "All grid dimensions must be positive");
     iarg += 4;
   } else
-    error->all(FLERR, "Illegal compute grid command");
+    error->all(FLERR, "Illegal fix python/gridforceace grid command");
 
   ngridglobal = nx * ny * nz;
   base_array_rows = 1;
   size_global_array_rows = ngridglobal + base_array_rows;
-  //without force
-  //size_global_array_rows = ngridglobal + base_array_rows;
   char * potential_file_name = arg[10];
 
   iarg = nargmin;
@@ -282,6 +274,7 @@ void FixPythonAceGridForce::allocate_global()
   if (allocated_global){
     deallocate_global();
   }
+  //TODO - redo global vs local gridpoints to take betas of shape (ngridlocal,ncoeff) from python
   memory->create(e_grid, ngridlocal, "python/acegridforce:e_grid");
   memory->create(e_grid_all, ngridlocal, "python/acegridforce:e_grid_all");
   memory->create(e_grid_global, ngridglobal, "python/acegridforce:e_grid_global");
@@ -628,53 +621,32 @@ void FixPythonAceGridForce::compute(int eflag, int vflag)
         acefimpl->ace->resize_neighbours_cache(ninside);
         acefimpl->ace->compute_atom(ninside, gridneigh, gridtype, ninside, gridinside);
         Array1D<DOUBLE_TYPE> Bs = acefimpl->ace->projections;
-        // linear contributions
+        // Accumulate descriptors on grid array
+        //   Accumulate energy (linear model for debugging)
         for (int icoeff = 0; icoeff < ndesc; icoeff++){
-#if INTERFACE_NUMPY
           //alocal[igrid][ndesc_base + icoeff] += Bs(icoeff);
           //e_grid[igrid_global] += Bs(icoeff)*py_beta[0][icoeff];
           gridlocal[ndesc_base + icoeff][iz][iy][ix] = Bs(icoeff);
           e_grid[igrid_global] += Bs(icoeff)*py_beta[0][icoeff];
-#endif
         }
+        //Accumulate forces
         // sum over neighbors jj
         // sum over descriptor indices k=iicoeff
         // multiply dE_I/dB_I * dB_I^k/drj and add to atom->f 
-        //printf("ninside %d ngridglobal %d \n",ninside,ngridglobal);
-        //double fac = 1.0/ngridglobal;
-        double fac = 1.0;
         for (int jj =0; jj < ninside;jj++){
           int mj = gridj[jj];
           for (int iicoeff = 0; iicoeff < ndesc; iicoeff++){
             DOUBLE_TYPE fx_dB = acefimpl->ace->neighbours_dB(iicoeff,jj,0);
             DOUBLE_TYPE fy_dB = acefimpl->ace->neighbours_dB(iicoeff,jj,1);
             DOUBLE_TYPE fz_dB = acefimpl->ace->neighbours_dB(iicoeff,jj,2);
-#if !TAG_J_ADD
-            f[mj][0] -= fac*fx_dB *py_beta[igrid_global+base_array_rows][iicoeff];
-            f[mj][1] -= fac*fy_dB *py_beta[igrid_global+base_array_rows][iicoeff];
-            f[mj][2] -= fac*fz_dB *py_beta[igrid_global+base_array_rows][iicoeff];
-            //f[atom->tag[jj]][0] -= fx_dB *py_beta[igrid_global+base_array_rows][iicoeff];
-            //f[atom->tag[jj]][1] -= fy_dB *py_beta[igrid_global+base_array_rows][iicoeff];
-            //f[atom->tag[jj]][2] -= fz_dB *py_beta[igrid_global+base_array_rows][iicoeff];
-#endif
-#if TAG_J_ADD
-            f[atom->tag[mj]][0] -= fx_dB *py_beta[igrid_global+base_array_rows][iicoeff];
-            f[atom->tag[mj]][1] -= fy_dB *py_beta[igrid_global+base_array_rows][iicoeff];
-            f[atom->tag[mj]][2] -= fz_dB *py_beta[igrid_global+base_array_rows][iicoeff];
-#endif
+            f[atom->tag[mj]-1][0] -= fx_dB *py_beta[igrid_global+base_array_rows][iicoeff];
+            f[atom->tag[mj]-1][1] -= fy_dB *py_beta[igrid_global+base_array_rows][iicoeff];
+            f[atom->tag[mj]-1][2] -= fz_dB *py_beta[igrid_global+base_array_rows][iicoeff];
           }
         }
         
         igrid++;
       }
-
-#ifdef DEBUG_GRID_FORCE
-  for (int jj =0; jj < atom->natoms;jj++){
-    printf("tallied forces for atom %d  %f %f %f \n",jj,f[jj][0],f[jj][1],f[jj][2]);
-    //printf("tallied forces for atom %d  %f %f %f \n",jj,f[atom->tag[jj]][0],f[atom->tag[jj]][1],f[atom->tag[jj]][2]);
-  }
-#endif
-
 }
 
 /* ----------------------------------------------------------------------
@@ -693,7 +665,6 @@ double FixPythonAceGridForce::compute_scalar()
 #if !MPI_NUMPY
   double etot = 0.0;
   for (int kk = 0; kk < ngridglobal; kk++){
-    //etot += e_grid[kk]/ngridglobal;
     etot += e_grid[kk];
   }
 #endif
@@ -736,17 +707,12 @@ void FixPythonAceGridForce::process_pyarr(PyObject* arr)
 #endif
   if (prank == 0 ){
  
+    //TODO - finish version that can take local dEdB from python with shape (ngridlocal,ncoeff) 
     double* pybeta = (double*)PyArray_DATA(arr);
     deallocate_py_beta();
     allocate_py_beta();
     int pyrows = size_global_array_rows;
     int pycols = ndesc-ndesc_base;
-#if DEBUG_BETA_INDICES
-    printf("pydims %d \n",pyrows);
-    printf("pycols %d \n",pycols);
-    printf("ngridlocal %d ngridglobal %d \n",ngridlocal,size_global_array_rows);
-    printf("lammps cols %d \n", (ndesc-ndesc_base));
-#endif
 #if MPI_NUMPY
     MPI_Allreduce(pybeta, py_beta_contig, (size_global_array_rows*(ndesc-ndesc_base)), MPI_DOUBLE, MPI_SUM, world);
 #endif
@@ -802,12 +768,6 @@ void FixPythonAceGridForce::pre_force(int vflag)
   deallocate_grid();
   allocate_grid();
 
-  // zero energy grid arrays
-  //for (int ik=0; ik < ngridglobal; ik++){
-  //  e_grid[ik] = 0.0;
-  //  e_grid_all[ik] = 0.0;
-  //}
-
   // directly process python beta array
   process_pyarr(result);
   // compute ace descriptors on the grid
@@ -816,9 +776,6 @@ void FixPythonAceGridForce::pre_force(int vflag)
   if (!result) {
     PyUtils::Print_Errors();
     error->all(FLERR,"Fix python/acegridforce pre_force() method failed");
-#ifdef DEBUG_GRID
-    printf("WARNING - null result for py command with result: %s \n",result);
-#endif
   }
 
   Py_CLEAR(result);
