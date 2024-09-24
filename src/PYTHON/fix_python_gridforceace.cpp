@@ -47,6 +47,9 @@
 #define INTERFACE_NUMPY 1
 #define MPI_NUMPY 0
 
+// define for linearized energy calculation
+#define ENERGY_ROW 1
+
 namespace LAMMPS_NS {
 struct ACEFimpl {
   ACEFimpl() : basis_set(nullptr), ace(nullptr) {}
@@ -115,7 +118,10 @@ FixPythonAceGridForce::FixPythonAceGridForce(LAMMPS *lmp, int narg, char **arg) 
     error->all(FLERR, "Illegal fix python/gridforceace grid command");
 
   ngridglobal = nx * ny * nz;
+  base_array_rows = 0;
+#if ENERGY_ROW 
   base_array_rows = 1;
+#endif
   size_global_array_rows = ngridglobal + base_array_rows;
   char * potential_file_name = arg[10];
 
@@ -627,7 +633,9 @@ void FixPythonAceGridForce::compute(int eflag, int vflag)
           //alocal[igrid][ndesc_base + icoeff] += Bs(icoeff);
           //e_grid[igrid_global] += Bs(icoeff)*py_beta[0][icoeff];
           gridlocal[ndesc_base + icoeff][iz][iy][ix] = Bs(icoeff);
+#if ENERGY_ROW
           e_grid[igrid_global] += Bs(icoeff)*py_beta[0][icoeff];
+#endif
         }
         //Accumulate forces
         // sum over neighbors jj
