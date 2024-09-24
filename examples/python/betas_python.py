@@ -52,7 +52,9 @@ def pre_force_callback(lmp):
     nrow = (get_grid(ngrid=3)) #for now add a dE_I/dB_{I,K}row for ALL gridpoints (global)
     ncoef = int(368/2) #number of ace descriptors per atom - may be obtained from ACE functions in mala
     ncol = ncoef + ncolbase
-    base_array_rows = 1
+    # set to 1 if including energy row
+    #base_array_rows = 1
+    base_array_rows=0
     #-------------------------------------------------------------
     # dummy function to get dE_I/dB_{I,k} for a
     #-------------------------------------------------------------
