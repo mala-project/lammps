@@ -1,0 +1,143 @@
+LAMMPS (15 Jun 2023 - Development - 5aacc096c9-modified)
+# example with unique grid type
+
+variable        nfreq equal 1 # how frequently to run fix (should be every step)
+variable        ngrid equal 3 # how many grid points
+variable        nthermo equal 50
+variable        nrep index 3 # number of repeated unit cells for Ca
+variable        a index 4.1
+variable    fdelta index 1.0e-5 # displacement size
+variable    nugget equal 1.0e-12 # regularization for relerr
+variable    ndump index 50     # dump output interval
+
+units           metal
+atom_modify     map hash
+
+variable        nx equal ${nrep}
+variable        nx equal 3
+variable        ny equal ${nrep}
+variable        ny equal 3
+variable        nz equal ${nrep}
+variable        nz equal 3
+
+boundary        p p p
+
+#make a fictitious system to test grid force calculations
+lattice         custom $a         a1 1 0 0         a2 0 1 0          a3 0 0 1         basis 0.01 0.01 0.01
+lattice         custom 4.1         a1 1 0 0         a2 0 1 0          a3 0 0 1         basis 0.01 0.01 0.01
+Lattice spacing in x,y,z = 4.1 4.1 4.1
+
+region          box block 0 ${nx} 0 ${ny} 0 ${nz}
+region          box block 0 3 0 ${ny} 0 ${nz}
+region          box block 0 3 0 3 0 ${nz}
+region          box block 0 3 0 3 0 3
+create_box      1 box
+Created orthogonal box = (0 0 0) to (12.3 12.3 12.3)
+  1 by 1 by 1 MPI processor grid
+create_atoms    1 box basis 1 1
+Created 27 atoms
+  using lattice units in orthogonal box = (0 0 0) to (12.3 12.3 12.3)
+  create_atoms CPU = 0.000 seconds
+
+mass            1 35.453
+
+group           acegroup type 1
+27 atoms in group acegroup
+variable        rcutfac equal 6.0 # define rcutfac for pairstyle_zero (must be bigger than radial cutoffs in coupling_coefficients.yace
+
+
+variable        ace_options string "coupling_coefficients.yace ugridtype 1"
+
+displace_atoms  all random 0.01 0.01 0.01 3542
+Displacing atoms ...
+
+pair_style      zero ${rcutfac} # null pairstyle so that lammps will still evolve system in time
+pair_style      zero 6 
+pair_coeff      * *
+
+timestep        0.5e-3
+neighbor        0.3 bin
+neigh_modify    every 1 delay 0 check yes
+
+
+#define lammps python command
+python          pre_force_callback file betas_python.py
+
+fix             4 all python/acegridforce ${nfreq} pre_force pre_force_callback grid ${ngrid} ${ngrid} ${ngrid} ${ace_options}
+fix             4 all python/acegridforce 1 pre_force pre_force_callback grid ${ngrid} ${ngrid} ${ngrid} ${ace_options}
+fix             4 all python/acegridforce 1 pre_force pre_force_callback grid 3 ${ngrid} ${ngrid} ${ace_options}
+fix             4 all python/acegridforce 1 pre_force pre_force_callback grid 3 3 ${ngrid} ${ace_options}
+fix             4 all python/acegridforce 1 pre_force pre_force_callback grid 3 3 3 ${ace_options}
+fix             4 all python/acegridforce 1 pre_force pre_force_callback grid 3 3 3 coupling_coefficients.yace ugridtype 1
+fix_modify      4 energy yes
+
+thermo          ${nfreq}
+thermo          1
+
+# add numdiff (numerical differentiation) forces to validate fix python/gridforceace
+fix      numforce all numdiff ${nfreq} ${fdelta}
+fix      numforce all numdiff 1 ${fdelta}
+fix      numforce all numdiff 1 1.0e-5
+variable     ferrx atom f_numforce[1]-fx
+variable     ferry atom f_numforce[2]-fy
+variable     ferrz atom f_numforce[3]-fz
+variable     fnumx atom f_numforce[1]
+variable     fnumy atom f_numforce[2]
+variable     fnumz atom f_numforce[3]
+variable     ferrsq atom v_ferrx^2+v_ferry^2+v_ferrz^2
+compute      faverrsq all reduce ave v_ferrsq
+variable     fsq atom fx^2+fy^2+fz^2
+compute      favsq all reduce ave v_fsq
+variable     frelerr equal sqrt(c_faverrsq/(c_favsq+${nugget}))
+variable     frelerr equal sqrt(c_faverrsq/(c_favsq+1e-12))
+dump errors  all custom ${ndump} force_error.dump v_ferrx v_ferry v_ferrz v_fnumx v_fnumy v_fnumz fx fy fz
+dump errors  all custom 50 force_error.dump v_ferrx v_ferry v_ferrz v_fnumx v_fnumy v_fnumz fx fy fz
+
+
+thermo_style    custom step temp pe etotal press v_frelerr c_faverrsq c_favsq
+
+run             0
+WARNING: No fixes with time integration, atoms won't move (src/verlet.cpp:60)
+Generated 0 of 0 mixed pair_coeff terms from geometric mixing rule
+Neighbor list info ...
+  update: every = 1 steps, delay = 0 steps, check = yes
+  max neighbors/atom: 2000, page size: 100000
+  master list distance cutoff = 6.3
+  ghost atom cutoff = 6.3
+  binsize = 3.15, bins = 4 4 4
+  1 neighbor lists, perpetual/occasional/extra = 1 0 0
+  (1) pair zero, perpetual
+      attributes: half, newton on
+      pair build: half/bin/atomonly/newton
+      stencil: half/bin/3d
+      bin: standard
+WARNING: Dump errors includes no atom IDs and is not sorted by ID. This may complicate post-processing tasks or visualization (src/dump.cpp:221)
+Per MPI rank memory allocation (min/avg/max) = 4.69 | 4.69 | 4.69 Mbytes
+   Step          Temp          PotEng         TotEng         Press        v_frelerr      c_faverrsq      c_favsq    
+         0   0              2.6520001      2.6520001      0              2.2633547e-08  3.0655485e-18  0.0059841564 
+Loop time of 3.986e-06 on 1 procs for 0 steps with 27 atoms
+
+100.4% CPU use with 1 MPI tasks x no OpenMP threads
+
+MPI task timing breakdown:
+Section |  min time  |  avg time  |  max time  |%varavg| %total
+---------------------------------------------------------------
+Pair    | 0          | 0          | 0          |   0.0 |  0.00
+Neigh   | 0          | 0          | 0          |   0.0 |  0.00
+Comm    | 0          | 0          | 0          |   0.0 |  0.00
+Output  | 0          | 0          | 0          |   0.0 |  0.00
+Modify  | 0          | 0          | 0          |   0.0 |  0.00
+Other   |            | 3.986e-06  |            |       |100.00
+
+Nlocal:             27 ave          27 max          27 min
+Histogram: 1 0 0 0 0 0 0 0 0 0
+Nghost:            189 ave         189 max         189 min
+Histogram: 1 0 0 0 0 0 0 0 0 0
+Neighs:            243 ave         243 max         243 min
+Histogram: 1 0 0 0 0 0 0 0 0 0
+
+Total # of neighbors = 243
+Ave neighs/atom = 9
+Neighbor list builds = 0
+Dangerous builds = 0
+Total wall time: 0:00:03
