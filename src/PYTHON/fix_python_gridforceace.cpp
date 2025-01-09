@@ -15,6 +15,7 @@
 /* ----------------------------------------------------------------------
    Contributing author: James Goff (Sandia National Laboratories)
 ------------------------------------------------------------------------- */
+#ifdef PYTHON_GRIDFORCE
 
 #include "fix_python_gridforceace.h"
 
@@ -48,7 +49,13 @@
 #define MPI_NUMPY 0
 
 // define for linearized energy calculation
-#define ENERGY_ROW 1
+#define ENERGY_ROW 0
+
+//defines for debugging
+//#define DEBUG_NUMPY_INTERFACE
+#define DEBUG_ARRAY_SIZE
+//#define DEBUG_FORCES
+//#define DEBUG_FORCES_INDS
 
 namespace LAMMPS_NS {
 struct ACEFimpl {
@@ -156,12 +163,17 @@ FixPythonAceGridForce::FixPythonAceGridForce(LAMMPS *lmp, int narg, char **arg) 
   if (gridtypeflagl){
     ielem = nelements-1;
   }
+#ifdef DEBUG_ARRAY_SIZE
+  printf("nelements, %d    |     ielem, %d \n",nelements,ielem); 
+#endif
   int n_r1, n_rp = 0;
   n_r1 = acefimpl->basis_set->total_basis_size_rank1[ielem];
   n_rp = acefimpl->basis_set->total_basis_size[ielem];
 
   int ncoeff = n_r1 + n_rp;
-
+#ifdef DEBUG_ARRAY_SIZE
+  printf("ncoeff (a.k.a. num descs) %d \n",ncoeff);
+#endif
   //ndesc_base = 6;
   ndesc_base = 0;
   nvalues = ncoeff;
@@ -171,7 +183,7 @@ FixPythonAceGridForce::FixPythonAceGridForce(LAMMPS *lmp, int narg, char **arg) 
   set_grid_local();
   allocate_global();
   size_local_array_rows = ngridlocal + base_array_rows;
-
+  printf("ngridlocal %d size_local_array_rows %d size_global_array_rows %d ndesc %d \n",ngridlocal,size_local_array_rows,size_global_array_rows,ndesc);
   // get Python function
   PyUtils::GIL lock;
 
@@ -529,14 +541,16 @@ void FixPythonAceGridForce::compute(int eflag, int vflag)
   double **f = atom->f;
   const int* const mask = atom->mask;
   int * const type = atom->type;
+  //TODO check local vs ghost atom counts
   const int ntotal = atom->nlocal + atom->nghost;
+  //const int ntotal = atom->nlocal;// + atom->nghost;
 
   //zero out forces
-  for (int jk = 0; jk < ntotal; jk++){
-    f[jk][0] =0.;
-    f[jk][1] =0.;
-    f[jk][2] =0.;
-  }
+  //for (int jk = 0; jk < ntotal; jk++){
+  //  f[jk][0] =0.;
+  //  f[jk][1] =0.;
+  //  f[jk][2] =0.;
+  //}
 
   // zero energy grid arrays
   for (int ik=0; ik < ngridglobal; ik++){
@@ -624,7 +638,11 @@ void FixPythonAceGridForce::compute(int eflag, int vflag)
         gridneigh[ninside][2] = ztmp;
         gridtype[ninside]=itype;
         // perform ACE evaluation with short neighbor list
-        acefimpl->ace->resize_neighbours_cache(ninside);
+#ifdef DEBUG_FORCES_INDS
+        printf("ninside %d, nmax %d, ninsidegrid %d \n",ninside,nmax,ninsidegrid);
+#endif
+        //acefimpl->ace->resize_neighbours_cache(ninside);
+        acefimpl->ace->resize_neighbours_cache(nmax);
         acefimpl->ace->compute_atom(ninside, gridneigh, gridtype, ninside, gridinside);
         Array1D<DOUBLE_TYPE> Bs = acefimpl->ace->projections;
         // Accumulate descriptors on grid array
@@ -644,12 +662,29 @@ void FixPythonAceGridForce::compute(int eflag, int vflag)
         for (int jj =0; jj < ninside;jj++){
           int mj = gridj[jj];
           for (int iicoeff = 0; iicoeff < ndesc; iicoeff++){
+            //float cval = std::ceil(py_beta[igrid_global+base_array_rows][iicoeff] * 1000000000000.0) / 1000000000000.0;
+            float cval = std::ceil(py_beta[igrid_global+base_array_rows][iicoeff] * 1.0E12) / 1.0E12;
+            //cval = cval/ngridglobal;
+            //cval = cval/ninside;
+            //
+            //
+            //cval = cval/ntotal;
             DOUBLE_TYPE fx_dB = acefimpl->ace->neighbours_dB(iicoeff,jj,0);
             DOUBLE_TYPE fy_dB = acefimpl->ace->neighbours_dB(iicoeff,jj,1);
             DOUBLE_TYPE fz_dB = acefimpl->ace->neighbours_dB(iicoeff,jj,2);
-            f[atom->tag[mj]-1][0] -= fx_dB *py_beta[igrid_global+base_array_rows][iicoeff];
-            f[atom->tag[mj]-1][1] -= fy_dB *py_beta[igrid_global+base_array_rows][iicoeff];
-            f[atom->tag[mj]-1][2] -= fz_dB *py_beta[igrid_global+base_array_rows][iicoeff];
+            f[atom->tag[mj]-1][0] -= fx_dB *cval;
+            f[atom->tag[mj]-1][1] -= fy_dB *cval;
+            f[atom->tag[mj]-1][2] -= fz_dB *cval;
+            //f[atom->tag[mj]-1][0] -= fx_dB *py_beta[igrid_global+base_array_rows][iicoeff];
+            //f[atom->tag[mj]-1][1] -= fy_dB *py_beta[igrid_global+base_array_rows][iicoeff];
+            //f[atom->tag[mj]-1][2] -= fz_dB *py_beta[igrid_global+base_array_rows][iicoeff];
+#ifdef DEBUG_FORCES
+            float bval = std::ceil(py_beta[igrid_global+base_array_rows][iicoeff] * 1000000000000.0) / 1000000000000.0;
+            //if (py_beta[igrid_global+base_array_rows][iicoeff] != 0.0) {
+            if (bval != 0.0){
+              printf("fx_dB %f fx_pybeta_cont %f prod %f %d \n",fx_dB,py_beta[igrid_global+base_array_rows][iicoeff],fx_dB*py_beta[igrid_global+base_array_rows][iicoeff],igrid_global);
+              }
+#endif
           }
         }
         
@@ -721,6 +756,12 @@ void FixPythonAceGridForce::process_pyarr(PyObject* arr)
     allocate_py_beta();
     int pyrows = size_global_array_rows;
     int pycols = ndesc-ndesc_base;
+    // zero pybeta array
+    for (int pyi =0; pyi < pyrows; pyi++){
+      for (int pyj =0; pyj < pycols; pyj++){
+        py_beta[pyi][pyj] = 0.0;
+      }
+    }
 #if MPI_NUMPY
     MPI_Allreduce(pybeta, py_beta_contig, (size_global_array_rows*(ndesc-ndesc_base)), MPI_DOUBLE, MPI_SUM, world);
 #endif
@@ -764,7 +805,9 @@ void FixPythonAceGridForce::post_force(int vflag)
 
 void FixPythonAceGridForce::pre_force(int vflag)
 {
-  //if (update->ntimestep % nevery != 0) return;
+  if (update->ntimestep % nevery != 0) return;
+  //printf("ntimestep, %d \n",update->ntimestep);
+  //if (update->ntimestep == 0) return;
 
   PyUtils::GIL lock;
 
@@ -777,14 +820,21 @@ void FixPythonAceGridForce::pre_force(int vflag)
   allocate_grid();
 
   // directly process python beta array
-  process_pyarr(result);
+  //process_pyarr(result);
   // compute ace descriptors on the grid
-  compute(1,0);
+  //compute(1,0);
 
   if (!result) {
     PyUtils::Print_Errors();
     error->all(FLERR,"Fix python/acegridforce pre_force() method failed");
   }
 
+  // directly process python beta array
+  process_pyarr(result);
+  // compute ace descriptors on the grid
+  compute(1,0);
+
   Py_CLEAR(result);
 }
+
+#endif
