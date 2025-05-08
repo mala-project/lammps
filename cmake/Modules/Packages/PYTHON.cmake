@@ -48,9 +48,10 @@ if(PYTHON_ENABLE_GRIDFORCE)
     message(FATAL_ERROR "Must enable ML-PACE package for including grid-based descriptor support in PYTHON")
   endif()
   execute_process(
-    COMMAND python -c "import numpy; print(numpy.get_include())"
+    COMMAND python3 -c "import numpy; print(numpy.get_include())"
     OUTPUT_VARIABLE npOUTPUT
   )
+message(WARNING "NP OUTPUT" ${npOUTPUT})
   string(STRIP ${npOUTPUT} npOUTPUT)
   target_include_directories(lammps
     PRIVATE
