@@ -454,12 +454,12 @@ void ComputeSNAGridLocalKokkos<DeviceType, real_type, vector_length>::operator()
       snaKK.rij(ii,offset,2) = static_cast<real_type>(dz);
       // pair snap uses jelem here, but we use jtype, see compute_sna_grid.cpp
       // actually since the views here have values starting at 0, let's use jelem
-      snaKK.wj(ii,offset) = static_cast<real_type>(d_wjelem[jelem]);
-      snaKK.rcutij(ii,offset) = static_cast<real_type>((2.0 * d_radelem[jelem])*rcutfac);
+      snaKK.wj(ii,offset) = static_cast<real_type>(d_wjelem[jtype]);
+      snaKK.rcutij(ii,offset) = static_cast<real_type>((2.0 * d_radelem[jtype])*rcutfac);
       snaKK.inside(ii,offset) = j;
       if (switchinnerflag) {
-        snaKK.sinnerij(ii,offset) = 0.5*(d_sinnerelem[ielem] + d_sinnerelem[jelem]);
-        snaKK.dinnerij(ii,offset) = 0.5*(d_dinnerelem[ielem] + d_dinnerelem[jelem]);
+        snaKK.sinnerij(ii,offset) = 0.5*(d_sinnerelem[ielem] + d_sinnerelem[jtype]);
+        snaKK.dinnerij(ii,offset) = 0.5*(d_dinnerelem[ielem] + d_dinnerelem[jtype]);
       }
       if (chemflag)
         snaKK.element(ii,offset) = jelem;
