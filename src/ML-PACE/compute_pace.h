@@ -42,7 +42,7 @@ class ComputePACE : public Compute {
   double **pace, **paceall;
   double **pace_peratom;
   int *map;    // map types to [0,nelements)
-  int bikflag, bik_rows, dgradflag, dgrad_rows;
+  int bikflag, bik_rows, dgradflag, dgrad_rows, addzeroflag;
   double cutmax;
 
   Compute *c_pe;

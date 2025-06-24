@@ -51,15 +51,17 @@ ComputePACE::ComputePACE(LAMMPS *lmp, int narg, char **arg) :
   extarray = 0;
   bikflag = 0;
   dgradflag = 0;
+  addzeroflag = 1;
 
   int ntypes = atom->ntypes;
-  int nargmin = 4;
+  int nargmin = 5;
 
   acecimpl = new ACECimpl;
   if (narg < nargmin) error->all(FLERR,"Illegal compute pace command");
 
   bikflag = utils::inumeric(FLERR, arg[4], false, lmp);
   dgradflag = utils::inumeric(FLERR, arg[5], false, lmp);
+  addzeroflag = utils::inumeric(FLERR, arg[6], false, lmp);
   if (dgradflag && !bikflag)
     error->all(FLERR,"Illegal compute pace command: dgradflag=1 requires bikflag=1");
 
@@ -330,12 +332,23 @@ void ComputePACE::compute_array()
         for (int icoeff = 0; icoeff < ncoeff; icoeff++){
           pace[irow][k++] += Bs(icoeff);
         }
-      } else {
+        if (addzeroflag) {
+          pace[irow][typeoffset_global] += acecimpl->basis_set->E0vals(itype-1);
+        }
+      } 
+      else {
         int k = 3;
         for (int icoeff = 0; icoeff < ncoeff; icoeff++){
           pace[irow][k++] += Bs(icoeff);
         }
+        if (addzeroflag) {
+        //  printf("compute pace E0, %f \n",acecimpl->basis_set->E0vals(itype-1));
+          pace[irow][typeoffset_global] += acecimpl->basis_set->E0vals(itype-1);
+        }
       }
+      //if (addzeroflag) {
+      //  pace[irow][typeoffset_global] += acecimpl->basis_set->E0vals(itype-1);
+      //}
     } //group bit
   } // for ii loop
   // accumulate force contributions to global array
