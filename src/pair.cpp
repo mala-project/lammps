@@ -24,6 +24,7 @@
 #include "domain.h"
 #include "error.h"
 #include "force.h"
+#include "info.h"
 #include "kspace.h"
 #include "math_const.h"
 #include "math_special.h"
@@ -88,6 +89,8 @@ Pair::Pair(LAMMPS *lmp) :
   ewaldflag = pppmflag = msmflag = dispersionflag = tip4pflag = dipoleflag = spinflag = 0;
   reinitflag = 1;
   centroidstressflag = CENTROID_SAME;
+
+  atomic_energy_enable = 0;
 
   // pair_modify settings
 
@@ -247,10 +250,15 @@ void Pair::init()
   // I,I coeffs must be set
   // init_one() will check if I,J is set explicitly or inferred by mixing
 
-  if (!allocated) error->all(FLERR,"All pair coeffs are not set");
-
-  for (i = 1; i <= atom->ntypes; i++)
-    if (setflag[i][i] == 0) error->all(FLERR,"All pair coeffs are not set");
+  if (!allocated) {
+    error->all(FLERR, Error::NOLASTLINE,
+               "All pair coeffs are not set. Status:\n" + Info::get_pair_coeff_status(lmp));
+  } else {
+    for (i = 1; i <= atom->ntypes; i++)
+      if (setflag[i][i] == 0)
+        error->all(FLERR, Error::NOLASTLINE,
+                   "All pair coeffs are not set. Status:\n" + Info::get_pair_coeff_status(lmp));
+  }
 
   // style-specific initialization
 
@@ -735,9 +743,9 @@ double Pair::mix_distance(double sig1, double sig2)
 
 /* ---------------------------------------------------------------------- */
 
-void Pair::compute_dummy(int eflag, int vflag)
+void Pair::compute_dummy(int eflag, int vflag, int alloc)
 {
-  ev_init(eflag,vflag);
+  ev_init(eflag,vflag,alloc);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -865,7 +873,7 @@ void Pair::map_element2type(int narg, char **arg, bool update_setflag)
       }
     }
 
-    if (count == 0) error->all(FLERR,"Incorrect args for pair coefficients");
+    if (count == 0) error->all(FLERR,"Incorrect args for pair coefficients" + utils::errorurl(21));
   }
 }
 
@@ -1832,9 +1840,8 @@ void Pair::write_file(int narg, char **arg)
     if (platform::file_is_readable(table_file)) {
       std::string units = utils::get_potential_units(table_file, "table");
       if (!units.empty() && (units != update->unit_style)) {
-        error->one(FLERR,"Trying to append to a table file "
-                                     "with UNITS: {} while units are {}",
-                                     units, update->unit_style);
+        error->one(FLERR,"Trying to append to a table file with UNITS: {} while units are {}",
+                   units, update->unit_style);
       }
       std::string date = utils::get_potential_date(table_file, "table");
       utils::logmesg(lmp,"Appending to table file {} with DATE: {}\n", table_file, date);
@@ -1843,17 +1850,19 @@ void Pair::write_file(int narg, char **arg)
       utils::logmesg(lmp,"Creating table file {} with DATE: {}\n",
                      table_file, utils::current_date());
       fp = fopen(table_file.c_str(),"w");
-      if (fp) fmt::print(fp,"# DATE: {} UNITS: {} Created by pair_write\n",
+      if (fp) utils::print(fp,"# DATE: {} UNITS: {} Created by pair_write\n",
                          utils::current_date(), update->unit_style);
     }
-    if (fp == nullptr)
+    if (fp) {
+      fprintf(fp, "# Pair potential %s for atom types %d %d: i,r,energy,force\n",
+              force->pair_style, itype, jtype);
+      if (style == RLINEAR)
+        fprintf(fp, "\n%s\nN %d R %.15g %.15g\n\n", arg[7], n, inner, outer);
+      if (style == RSQ)
+        fprintf(fp, "\n%s\nN %d RSQ %.15g %.15g\n\n", arg[7], n, inner, outer);
+    } else {
       error->one(FLERR,"Cannot open pair_write file {}: {}",table_file, utils::getsyserror());
-    fprintf(fp, "# Pair potential %s for atom types %d %d: i,r,energy,force\n",
-            force->pair_style, itype, jtype);
-    if (style == RLINEAR)
-      fprintf(fp, "\n%s\nN %d R %.15g %.15g\n\n", arg[7], n, inner, outer);
-    if (style == RSQ)
-      fprintf(fp, "\n%s\nN %d RSQ %.15g %.15g\n\n", arg[7], n, inner, outer);
+    }
   }
 
   // initialize potentials before evaluating pair potential

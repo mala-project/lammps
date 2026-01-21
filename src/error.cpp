@@ -35,7 +35,7 @@ static std::string truncpath(const std::string &path)
 /* ---------------------------------------------------------------------- */
 
 Error::Error(LAMMPS *lmp)
-  : Pointers(lmp), numwarn(0), maxwarn(100), allwarn(0)
+  : Pointers(lmp), numwarn(0), maxwarn(100), allwarn(0), showerror(1)
 {
   last_error_message.clear();
   last_error_type = ERROR_NONE;
@@ -56,7 +56,7 @@ void Error::universe_all(const std::string &file, int line, const std::string &s
   } catch (fmt::format_error &) {
     ; // do nothing
   }
-  if (universe->me == 0) {
+  if (showerror && (universe->me == 0)) {
     if (universe->uscreen)  fputs(mesg.c_str(),universe->uscreen);
     if (universe->ulogfile) fputs(mesg.c_str(),universe->ulogfile);
   }
@@ -84,7 +84,11 @@ void Error::universe_one(const std::string &file, int line, const std::string &s
 {
   std::string mesg = fmt::format("ERROR on proc {}: {} ({}:{})\n",
                                  universe->me,str,truncpath(file),line);
-  if (universe->uscreen) fputs(mesg.c_str(),universe->uscreen);
+  if (showerror) {
+    if (universe->uscreen) fputs(mesg.c_str(),universe->uscreen);
+    if (universe->ulogfile) fputs(mesg.c_str(),universe->ulogfile);
+  }
+  utils::flush_buffers(lmp);
 
   // allow commands if an exception was caught in a run
   // update may be a null pointer when catching command-line errors
@@ -103,7 +107,7 @@ void Error::universe_warn(const std::string &file, int line, const std::string &
   ++numwarn;
   if ((maxwarn != 0) && ((numwarn > maxwarn) || (allwarn > maxwarn) || (maxwarn < 0))) return;
   if (universe->uscreen)
-    fmt::print(universe->uscreen,"WARNING on proc {}: {} ({}:{})\n",
+    utils::print(universe->uscreen,"WARNING on proc {}: {} ({}:{})\n",
                universe->me,str,truncpath(file),line);
 }
 
@@ -118,13 +122,20 @@ void Error::all(const std::string &file, int line, int failed, const std::string
 {
   MPI_Barrier(world);
 
+  // must get rank from communicator since "comm" instance may not yet exist
+
+  int me = 0;
+  MPI_Comm_rank(world, &me);
+
   std::string lastcmd = "(unknown)";
   std::string mesg = "ERROR: " + str + fmt::format(" ({}:{})\n",  truncpath(file), line);
 
   // add text about the input following the error message
 
   if (failed > NOLASTLINE) mesg += utils::point_to_error(input, failed);
-  if (comm->me == 0) utils::logmesg(lmp,mesg);
+  if (failed == ARGZERO) mesg += utils::point_to_error(input, 0);
+  if (showerror && (me == 0)) utils::logmesg(lmp,mesg);
+  utils::flush_buffers(lmp);
 
   // allow commands if an exception was caught in a run
   // update may be a null pointer when catching command-line errors
@@ -148,15 +159,22 @@ void Error::one(const std::string &file, int line, int failed, const std::string
 {
   std::string lastcmd = "(unknown)";
 
-  std::string mesg = fmt::format("ERROR on proc {}: {} ({}:{})\n", comm->me, str,
-                                 truncpath(file), line);
+  // must get rank from communicator since "comm" instance may not yet exist
+
+  int me = 0;
+  MPI_Comm_rank(world, &me);
+
+  std::string mesg = fmt::format("ERROR on proc {}: {} ({}:{})\n", me, str, truncpath(file), line);
   if (failed > NOPOINTER) mesg += utils::point_to_error(input, failed);
-  utils::logmesg(lmp,mesg);
+  if (failed == ARGZERO) mesg += utils::point_to_error(input, 0);
+  if (showerror) utils::logmesg(lmp,mesg);
 
-  if (universe->nworlds > 1)
-    if (universe->uscreen)
-      fputs(mesg.c_str(),universe->uscreen);
+  if (showerror && (universe->nworlds > 1)) {
+    if (universe->uscreen) fputs(mesg.c_str(),universe->uscreen);
+    if (universe->ulogfile) fputs(mesg.c_str(),universe->ulogfile);
+  }
 
+  utils::flush_buffers(lmp);
   // allow commands if an exception was caught in a run
   // update may be a null pointer when catching command-line errors
 
@@ -199,8 +217,7 @@ void Error::warning(const std::string &file, int line, const std::string &str)
 {
   ++numwarn;
   if ((maxwarn != 0) && ((numwarn > maxwarn) || (allwarn > maxwarn) || (maxwarn < 0))) return;
-  std::string mesg = fmt::format("WARNING: {} ({}:{})\n",
-                                 str,truncpath(file),line);
+  std::string mesg = fmt::format("WARNING: {} ({}:{})\n", str,truncpath(file),line);
   if (screen) fputs(mesg.c_str(),screen);
   if (logfile) fputs(mesg.c_str(),logfile);
 }
@@ -255,6 +272,7 @@ void Error::_message(const std::string &file, int line, fmt::string_view format,
 
 void Error::done(int status)
 {
+  utils::flush_buffers(lmp);
   MPI_Barrier(world);
 
   if (output) delete output;
@@ -288,8 +306,21 @@ ErrorType Error::get_last_error_type() const
    set the last error message and error type
 ------------------------------------------------------------------------- */
 
-void Error::set_last_error(const char *msg, ErrorType type)
+void Error::set_last_error(const std::string &msg, ErrorType type)
 {
   last_error_message = msg;
   last_error_type = type;
+}
+
+/* ----------------------------------------------------------------------
+   enable or disable printing error messages. for use with library interface.
+   if flag = 0 only last error message and type are updated.
+   returns the previous setting.
+------------------------------------------------------------------------- */
+
+int Error::set_show_error(const int flag)
+{
+  int oldflag = showerror;
+  showerror = flag;
+  return oldflag;
 }

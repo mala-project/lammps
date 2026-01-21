@@ -220,6 +220,12 @@ Atom::Atom(LAMMPS *_lmp) : Pointers(_lmp), atom_style(nullptr), avec(nullptr), a
 
   area = ed = em = epsilon = curvature = q_scaled = nullptr;
 
+  // APIP package
+
+  apip_lambda_const = apip_lambda = apip_lambda_input = apip_lambda_input_ta = apip_e_fast = apip_e_precise = nullptr;
+  apip_lambda_required = nullptr;
+  apip_f_const_lambda = apip_f_dyn_lambda = nullptr;
+
   // end of customization section
   // --------------------------------------------------------------------
 
@@ -575,6 +581,18 @@ void Atom::peratom_create()
   add_peratom("curvature",&curvature,DOUBLE,0);
   add_peratom("q_scaled",&q_scaled,DOUBLE,0);
 
+  // APIP package
+
+  add_peratom("apip_lambda",&apip_lambda,DOUBLE,0);
+  add_peratom("apip_lambda_required",&apip_lambda_required,INT,0);
+  add_peratom("apip_lambda_input",&apip_lambda_input,DOUBLE,0);
+  add_peratom("apip_lambda_input_ta",&apip_lambda_input_ta,DOUBLE,0);
+  add_peratom("apip_e_fast",&apip_e_fast,DOUBLE,0);
+  add_peratom("apip_e_precise",&apip_e_precise,DOUBLE,0);
+  add_peratom("apip_lambda_const",&apip_lambda_const,DOUBLE,0);
+  add_peratom("apip_f_const_lambda",&apip_f_const_lambda,DOUBLE,3,1);
+  add_peratom("apip_f_dyn_lambda",&apip_f_dyn_lambda,DOUBLE,3,1);
+
   // end of customization section
   // --------------------------------------------------------------------
 }
@@ -658,6 +676,7 @@ void Atom::set_atomflag_defaults()
   contact_radius_flag = smd_data_9_flag = smd_stress_flag = 0;
   eff_plastic_strain_flag = eff_plastic_strain_rate_flag = 0;
   nspecial15_flag = 0;
+  apip_lambda_flag = apip_e_fast_flag = apip_e_precise_flag = apip_lambda_input_flag = apip_lambda_input_ta_flag = apip_lambda_required_flag = apip_f_const_lambda_flag = apip_f_dyn_lambda_flag = apip_lambda_const_flag = 0;
 
   pdscale = 1.0;
 }
@@ -767,7 +786,7 @@ void Atom::init()
   if (firstgroupname) {
     firstgroup = group->find(firstgroupname);
     if (firstgroup < 0)
-      error->all(FLERR,"Could not find atom_modify first group ID {}", firstgroupname);
+      error->all(FLERR, Error::NOLASTLINE, "Could not find atom_modify first group ID {}", firstgroupname);
   } else firstgroup = -1;
 
   // init AtomVec
@@ -830,21 +849,25 @@ void Atom::modify_params(int narg, char **arg)
   if (narg == 0) utils::missing_cmd_args(FLERR, "atom_modify", error);
 
   int iarg = 0;
+  int idx;
   while (iarg < narg) {
+    idx = iarg ? iarg : Error::ARGZERO;
     if (strcmp(arg[iarg],"id") == 0) {
       if (iarg+2 > narg) utils::missing_cmd_args(FLERR, "atom_modify id", error);
       if (domain->box_exist)
-        error->all(FLERR,"Atom_modify id command after simulation box is defined");
+        error->all(FLERR, idx, "Atom_modify id command after simulation box is defined"
+                   + utils::errorurl(34));
       tag_enable = utils::logical(FLERR,arg[iarg+1],false,lmp);
       iarg += 2;
     } else if (strcmp(arg[iarg],"map") == 0) {
       if (iarg+2 > narg) utils::missing_cmd_args(FLERR, "atom_modify map", error);
       if (domain->box_exist)
-        error->all(FLERR,"Atom_modify map command after simulation box is defined");
+        error->all(FLERR, idx, "Atom_modify map command after simulation box is defined"
+                   + utils::errorurl(34));
       if (strcmp(arg[iarg+1],"array") == 0) map_user = MAP_ARRAY;
       else if (strcmp(arg[iarg+1],"hash") == 0) map_user = MAP_HASH;
       else if (strcmp(arg[iarg+1],"yes") == 0) map_user = MAP_YES;
-      else error->all(FLERR,"Illegal atom_modify map command argument {}", arg[iarg+1]);
+      else error->all(FLERR, iarg + 1, "Illegal atom_modify map command argument {}", arg[iarg+1]);
       map_style = map_user;
       iarg += 2;
     } else if (strcmp(arg[iarg],"first") == 0) {
@@ -861,12 +884,12 @@ void Atom::modify_params(int narg, char **arg)
       if (iarg+3 > narg) utils::missing_cmd_args(FLERR, "atom_modify sort", error);
       sortfreq = utils::inumeric(FLERR,arg[iarg+1],false,lmp);
       userbinsize = utils::numeric(FLERR,arg[iarg+2],false,lmp);
-      if (sortfreq < 0) error->all(FLERR,"Illegal atom_modify sort frequency {}", sortfreq);
-      if (userbinsize < 0.0) error->all(FLERR,"Illegal atom_modify sort bin size {}", userbinsize);
+      if (sortfreq < 0) error->all(FLERR, iarg + 1, "Illegal atom_modify sort frequency {}", sortfreq);
+      if (userbinsize < 0.0) error->all(FLERR, iarg + 2, "Illegal atom_modify sort bin size {}", userbinsize);
       if ((sortfreq >= 0) && firstgroupname)
-        error->all(FLERR,"Atom_modify sort and first options cannot be used together");
+        error->all(FLERR, idx, "Atom_modify sort and first options cannot be used together");
       iarg += 3;
-    } else error->all(FLERR,"Illegal atom_modify command argument: {}", arg[iarg]);
+    } else error->all(FLERR, idx, "Illegal atom_modify command argument: {}", arg[iarg]);
   }
 }
 
@@ -2120,7 +2143,7 @@ int Atom::shape_consistency(int itype, double &shapex, double &shapey, double &s
 }
 
 /* ----------------------------------------------------------------------
-   add a new molecule template = set of molecules
+   add a new molecule template = set of molecules from the "molecule" command
 ------------------------------------------------------------------------- */
 
 void Atom::add_molecule(int narg, char **arg)
@@ -2128,7 +2151,7 @@ void Atom::add_molecule(int narg, char **arg)
   if (narg < 1) utils::missing_cmd_args(FLERR, "molecule", error);
 
   if (find_molecule(arg[0]) >= 0)
-    error->all(FLERR,"Reuse of molecule template ID {}", arg[0]);
+    error->all(FLERR, Error::ARGZERO, "Reuse of molecule template ID {}", arg[0]);
 
   // 1st molecule in set stores nset = # of mols, others store nset = 0
   // ifile = count of molecules in set
@@ -2139,13 +2162,34 @@ void Atom::add_molecule(int narg, char **arg)
   while (true) {
     molecules = (Molecule **)
       memory->srealloc(molecules,(nmolecule+1)*sizeof(Molecule *), "atom::molecules");
-    molecules[nmolecule] = new Molecule(lmp,narg,arg,index);
+    molecules[nmolecule] = new Molecule(lmp);
+    molecules[nmolecule]->command(narg,arg,index);
     molecules[nmolecule]->nset = 0;
     molecules[nmolecule-ifile+1]->nset++;
     nmolecule++;
     if (molecules[nmolecule-1]->last) break;
     ifile++;
   }
+}
+
+/* ----------------------------------------------------------------------
+   add a new molecule template from a JSON object
+------------------------------------------------------------------------- */
+
+void Atom::add_molecule(const std::string &id, const json &moldata)
+{
+  if (id.empty()) error->all(FLERR, "Must provide molecule ID");
+
+  if (find_molecule(id.c_str()) >= 0)
+    error->all(FLERR, Error::NOLASTLINE, "Reuse of molecule template ID {}", id);
+
+  molecules = (Molecule **)
+    memory->srealloc(molecules,(nmolecule+1)*sizeof(Molecule *), "atom::molecules");
+  molecules[nmolecule] = new Molecule(lmp);
+  molecules[nmolecule]->from_json(id, moldata);
+  molecules[nmolecule]->nset = 1;
+  molecules[nmolecule]->last = 1;
+  nmolecule++;
 }
 
 /* ----------------------------------------------------------------------
@@ -2299,7 +2343,7 @@ void Atom::first_reorder()
   // nfirst = index of first atom not in firstgroup
   // when find firstgroup atom out of place, swap it with atom nfirst
 
-  int bitmask = group->bitmask[firstgroup];
+  const int bitmask = group->get_bitmask_by_id(FLERR, firstgroupname, "Atom::first_reorder");
   nfirst = 0;
   while (nfirst < nlocal && mask[nfirst] & bitmask) nfirst++;
 
@@ -2870,6 +2914,8 @@ void Atom::remove_custom(int index, int flag, int cols)
   }
 }
 
+// TODO: complete list of exported properties.
+
 /** Provide access to internal data of the Atom class by keyword
  *
 \verbatim embed:rst
@@ -3031,7 +3077,6 @@ void *Atom::extract(const char *name)
   if (strcmp(name,"x") == 0) return (void *) x;
   if (strcmp(name,"v") == 0) return (void *) v;
   if (strcmp(name,"f") == 0) return (void *) f;
-  if (strcmp(name,"molecule") == 0) return (void *) molecule;
   if (strcmp(name,"q") == 0) return (void *) q;
   if (strcmp(name,"mu") == 0) return (void *) mu;
   if (strcmp(name,"omega") == 0) return (void *) omega;
@@ -3046,6 +3091,33 @@ void *Atom::extract(const char *name)
   if (strcmp(name,"quat") == 0) return (void *) quat;
   if (strcmp(name,"temperature") == 0) return (void *) temperature;
   if (strcmp(name,"heatflow") == 0) return (void *) heatflow;
+
+  // MOLECULE PACKAGE
+
+  if (strcmp(name,"molecule") == 0) return (void *) molecule;
+  if (strcmp(name,"molindex") == 0) return (void *) molindex;
+  if (strcmp(name,"nspecial") == 0) return (void *) nspecial;
+  if (strcmp(name,"special") == 0) return (void *) special;
+  if (strcmp(name,"num_bond") == 0) return (void *) num_bond;
+  if (strcmp(name,"bond_type") == 0) return (void *) bond_type;
+  if (strcmp(name,"bond_atom") == 0) return (void *) bond_atom;
+  if (strcmp(name,"num_angle") == 0) return (void *) num_angle;
+  if (strcmp(name,"angle_type") == 0) return (void *) angle_type;
+  if (strcmp(name,"angle_atom1") == 0) return (void *) angle_atom1;
+  if (strcmp(name,"angle_atom2") == 0) return (void *) angle_atom2;
+  if (strcmp(name,"angle_atom3") == 0) return (void *) angle_atom3;
+  if (strcmp(name,"num_dihedral") == 0) return (void *) num_dihedral;
+  if (strcmp(name,"dihedral_type") == 0) return (void *) dihedral_type;
+  if (strcmp(name,"dihedral_atom1") == 0) return (void *) dihedral_atom1;
+  if (strcmp(name,"dihedral_atom2") == 0) return (void *) dihedral_atom2;
+  if (strcmp(name,"dihedral_atom3") == 0) return (void *) dihedral_atom3;
+  if (strcmp(name,"dihedral_atom4") == 0) return (void *) dihedral_atom4;
+  if (strcmp(name,"num_improper") == 0) return (void *) num_improper;
+  if (strcmp(name,"improper_type") == 0) return (void *) improper_type;
+  if (strcmp(name,"improper_atom1") == 0) return (void *) improper_atom1;
+  if (strcmp(name,"improper_atom2") == 0) return (void *) improper_atom2;
+  if (strcmp(name,"improper_atom3") == 0) return (void *) improper_atom3;
+  if (strcmp(name,"improper_atom4") == 0) return (void *) improper_atom4;
 
   // PERI PACKAGE
 
@@ -3114,6 +3186,18 @@ void *Atom::extract(const char *name)
   if (strcmp(name,"curvature") == 0) return (void *) curvature;
   if (strcmp(name,"q_scaled") == 0) return (void *) q_scaled;
 
+  // APIP package
+
+  if (strcmp(name,"apip_lambda") == 0) return (void *) apip_lambda;
+  if (strcmp(name,"apip_lambda_required") == 0) return (void *) apip_lambda_required;
+  if (strcmp(name,"apip_lambda_input") == 0) return (void *) apip_lambda_input;
+  if (strcmp(name,"apip_lambda_input_ta") == 0) return (void *) apip_lambda_input_ta;
+  if (strcmp(name,"apip_e_fast") == 0) return (void *) apip_e_fast;
+  if (strcmp(name,"apip_e_precise") == 0) return (void *) apip_e_precise;
+  if (strcmp(name,"apip_f_const_lambda") == 0) return (void *) apip_f_const_lambda;
+  if (strcmp(name,"apip_f_dyn_lambda") == 0) return (void *) apip_f_dyn_lambda;
+  if (strcmp(name,"apip_lambda_const") == 0) return (void *) apip_lambda_const;
+
   // end of customization section
   // --------------------------------------------------------------------
 
@@ -3168,7 +3252,6 @@ int Atom::extract_datatype(const char *name)
   if (strcmp(name,"x") == 0) return LAMMPS_DOUBLE_2D;
   if (strcmp(name,"v") == 0) return LAMMPS_DOUBLE_2D;
   if (strcmp(name,"f") == 0) return LAMMPS_DOUBLE_2D;
-  if (strcmp(name,"molecule") == 0) return LAMMPS_TAGINT;
   if (strcmp(name,"q") == 0) return LAMMPS_DOUBLE;
   if (strcmp(name,"mu") == 0) return LAMMPS_DOUBLE_2D;
   if (strcmp(name,"omega") == 0) return LAMMPS_DOUBLE_2D;
@@ -3183,6 +3266,34 @@ int Atom::extract_datatype(const char *name)
   if (strcmp(name,"quat") == 0) return LAMMPS_DOUBLE_2D;
   if (strcmp(name,"temperature") == 0) return LAMMPS_DOUBLE;
   if (strcmp(name,"heatflow") == 0) return LAMMPS_DOUBLE;
+
+  // MOLECULE package
+
+  if (strcmp(name,"molecule") == 0) return LAMMPS_TAGINT;
+  if (strcmp(name,"molindex") == 0) return LAMMPS_INT;
+  if (strcmp(name,"molatom") == 0) return LAMMPS_INT;
+  if (strcmp(name,"nspecial") == 0) return LAMMPS_INT_2D;
+  if (strcmp(name,"special") == 0) return LAMMPS_TAGINT_2D;
+  if (strcmp(name,"num_bond") == 0) return LAMMPS_INT;
+  if (strcmp(name,"bond_type") == 0) return LAMMPS_INT_2D;
+  if (strcmp(name,"bond_atom") == 0) return LAMMPS_TAGINT_2D;
+  if (strcmp(name,"num_angle") == 0) return LAMMPS_INT;
+  if (strcmp(name,"angle_type") == 0) return LAMMPS_INT_2D;
+  if (strcmp(name,"angle_atom1") == 0) return LAMMPS_TAGINT_2D;
+  if (strcmp(name,"angle_atom2") == 0) return LAMMPS_TAGINT_2D;
+  if (strcmp(name,"angle_atom3") == 0) return LAMMPS_TAGINT_2D;
+  if (strcmp(name,"num_dihedral") == 0) return LAMMPS_INT;
+  if (strcmp(name,"dihedral_type") == 0) return LAMMPS_INT_2D;
+  if (strcmp(name,"dihedral_atom1") == 0) return LAMMPS_TAGINT_2D;
+  if (strcmp(name,"dihedral_atom2") == 0) return LAMMPS_TAGINT_2D;
+  if (strcmp(name,"dihedral_atom3") == 0) return LAMMPS_TAGINT_2D;
+  if (strcmp(name,"dihedral_atom4") == 0) return LAMMPS_TAGINT_2D;
+  if (strcmp(name,"num_improper") == 0) return LAMMPS_INT;
+  if (strcmp(name,"improper_type") == 0) return LAMMPS_INT_2D;
+  if (strcmp(name,"improper_atom1") == 0) return LAMMPS_TAGINT_2D;
+  if (strcmp(name,"improper_atom2") == 0) return LAMMPS_TAGINT_2D;
+  if (strcmp(name,"improper_atom3") == 0) return LAMMPS_TAGINT_2D;
+  if (strcmp(name,"improper_atom4") == 0) return LAMMPS_TAGINT_2D;
 
   // PERI package (and in part MACHDYN)
 
@@ -3245,6 +3356,17 @@ int Atom::extract_datatype(const char *name)
   if (strcmp(name,"curvature") == 0) return LAMMPS_DOUBLE;
   if (strcmp(name,"q_unscaled") == 0) return LAMMPS_DOUBLE;
 
+  // APIP package
+
+  if (strcmp(name,"apip_lambda") == 0) return LAMMPS_DOUBLE;
+  if (strcmp(name,"apip_lambda_required") == 0) return LAMMPS_INT;
+  if (strcmp(name,"apip_lambda_input") == 0) return LAMMPS_DOUBLE;
+  if (strcmp(name,"apip_lambda_input_ta") == 0) return LAMMPS_DOUBLE;
+  if (strcmp(name,"apip_e_fast") == 0) return LAMMPS_DOUBLE;
+  if (strcmp(name,"apip_e_precise") == 0) return LAMMPS_DOUBLE;
+  if (strcmp(name,"apip_lambda_const") == 0) return LAMMPS_DOUBLE;
+  if (strcmp(name,"apip_f_const_lambda") == 0) return LAMMPS_DOUBLE_2D;
+  if (strcmp(name,"apip_f_dyn_lambda") == 0) return LAMMPS_DOUBLE_2D;
   // end of customization section
   // --------------------------------------------------------------------
 
@@ -3381,6 +3503,18 @@ int Atom::extract_size(const char *name, int type)
 
       if (strcmp(name, "smd_data_9") == 0) return 9;
       if (strcmp(name, "smd_stress") == 0) return 6;
+
+      // APIP package
+
+      if (strcmp(name, "apip_lambda") == 0) return nlocal;
+      if (strcmp(name, "apip_lambda_required") == 0) return nlocal;
+      if (strcmp(name, "apip_lambda_input") == 0) return nlocal;
+      if (strcmp(name, "apip_lambda_input_ta") == 0) return nlocal;
+      if (strcmp(name, "apip_e_fast") == 0) return nlocal;
+      if (strcmp(name, "apip_e_precise") == 0) return nlocal;
+      if (strcmp(name, "apip_lambda_const") == 0) return nlocal;
+      if (strcmp(name, "apip_f_const_lambda") == 0) return nall;
+      if (strcmp(name, "apip_f_dyn_lambda") == 0) return nall;
     }
 
     // custom arrays

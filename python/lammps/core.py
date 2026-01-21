@@ -17,10 +17,9 @@
 from __future__ import print_function
 
 import os
-import sys
 from ctypes import CDLL, POINTER, RTLD_GLOBAL, CFUNCTYPE, py_object, byref, cast, sizeof, \
   create_string_buffer, c_int, c_int32, c_int64, c_double, c_void_p, c_char_p, c_char,    \
-  pythonapi, pointer
+  pythonapi
 from os.path import dirname, abspath, join
 from inspect import getsourcefile
 
@@ -30,7 +29,7 @@ from lammps.constants import LAMMPS_AUTODETECT, LAMMPS_STRING, \
   LMP_TYPE_SCALAR, LMP_TYPE_VECTOR, LMP_TYPE_ARRAY, \
   LMP_SIZE_VECTOR, LMP_SIZE_ROWS, LMP_SIZE_COLS, \
   LMP_VAR_EQUAL, LMP_VAR_ATOM, LMP_VAR_VECTOR, LMP_VAR_STRING, \
-  get_ctypes_int
+  LMP_BUFSIZE, get_ctypes_int
 
 from lammps.data import NeighList
 
@@ -83,8 +82,6 @@ class command_wrapper(object):
 
   def _wrap_args(self, x):
       if callable(x):
-          if sys.version_info <  (3,):
-            raise Exception("Passing functions or lambdas directly as arguments is only supported in Python 3 or newer")
           import hashlib
           import __main__
           sha = hashlib.sha256()
@@ -105,11 +102,6 @@ class command_wrapper(object):
     all the arguments, concatinates them to a single string, and executes it using
     :py:meth:`lammps.command`.
 
-    Starting with Python 3.6 it also supports keyword arguments. key=value is
-    transformed into 'key value'. Note, since these have come last in the
-    parameter list, only a subset of LAMMPS commands can be used with this
-    syntax.
-
     LAMMPS commands that accept callback functions (such as fix python/invoke)
     can be passed functions and lambdas directly. The first argument of such
     callbacks will be an lammps object constructed from the passed LAMMPS
@@ -120,9 +112,6 @@ class command_wrapper(object):
     """
     def handler(*args, **kwargs):
       cmd_args = [name] + [str(self._wrap_args(x)) for x in args]
-
-      if len(kwargs) > 0 and sys.version_info < (3,6):
-         raise Exception("Keyword arguments are only supported in Python 3.6 or newer")
 
       # Python 3.6+ maintains ordering of kwarg keys
       for k in kwargs.keys():
@@ -331,6 +320,13 @@ class lammps(object):
       [c_void_p,c_char_p,c_int,c_int,c_int,POINTER(c_int),c_void_p]
     self.lib.lammps_scatter_subset.restype = None
 
+    self.lib.lammps_create_atoms.argtypes = \
+      [c_void_p, c_int, POINTER(self.c_tagint), POINTER(c_int), POINTER(c_double),
+       POINTER(c_double), POINTER(c_double), POINTER(self.c_imageint), c_int]
+    self.lib.lammps_create_atoms.restype = c_int
+
+    self.lib.lammps_create_molecule.argtypes = [c_void_p, c_char_p, c_char_p]
+    self.lib.lammps_create_molecule.restype = None
 
     self.lib.lammps_find_pair_neighlist.argtypes = [c_void_p, c_char_p, c_int, c_int, c_int]
     self.lib.lammps_find_pair_neighlist.restype  = c_int
@@ -358,6 +354,8 @@ class lammps(object):
 
     self.lib.lammps_get_last_error_message.argtypes = [c_void_p, c_char_p, c_int]
     self.lib.lammps_get_last_error_message.restype = c_int
+    self.lib.lammps_set_show_error.argtypes = [c_void_p, c_int]
+    self.lib.lammps_set_show_error.restype = c_int
 
     self.lib.lammps_extract_global.argtypes = [c_void_p, c_char_p]
     self.lib.lammps_extract_global_datatype.argtypes = [c_void_p, c_char_p]
@@ -421,6 +419,10 @@ class lammps(object):
     self.lib.lammps_extract_variable.argtypes = [c_void_p, c_char_p, c_char_p]
     self.lib.lammps_extract_variable_datatype.argtypes = [c_void_p, c_char_p]
     self.lib.lammps_extract_variable_datatype.restype = c_int
+
+    self.lib.lammps_clearstep_compute.argtype = [c_void_p]
+    self.lib.lammps_addstep_compute.argtype = [c_void_p, c_void_p]
+    self.lib.lammps_addstep_compute_all.argtype = [c_void_p, c_void_p]
 
     self.lib.lammps_eval.argtypes = [c_void_p, c_char_p]
     self.lib.lammps_eval.restype = c_double
@@ -526,16 +528,10 @@ class lammps(object):
 
     else:
       # magic to convert ptr to ctypes ptr
-      if sys.version_info >= (3, 0):
-        # Python 3 (uses PyCapsule API)
-        pythonapi.PyCapsule_GetPointer.restype = c_void_p
-        pythonapi.PyCapsule_GetPointer.argtypes = [py_object, c_char_p]
-        self.lmp = c_void_p(pythonapi.PyCapsule_GetPointer(ptr, None))
-      else:
-        # Python 2 (uses PyCObject API)
-        pythonapi.PyCObject_AsVoidPtr.restype = c_void_p
-        pythonapi.PyCObject_AsVoidPtr.argtypes = [py_object]
-        self.lmp = c_void_p(pythonapi.PyCObject_AsVoidPtr(ptr))
+      # Python 3 (uses PyCapsule API)
+      pythonapi.PyCapsule_GetPointer.restype = c_void_p
+      pythonapi.PyCapsule_GetPointer.argtypes = [py_object, c_char_p]
+      self.lmp = c_void_p(pythonapi.PyCapsule_GetPointer(ptr, None))
 
     # check if library initilialization failed
     if not self.lmp:
@@ -664,8 +660,9 @@ class lammps(object):
 
   def finalize(self):
     """Shut down the MPI communication and Kokkos environment (if active) through the
-       library interface by  calling :cpp:func:`lammps_mpi_finalize` and
-       :cpp:func:`lammps_kokkos_finalize`.
+       library interface by  calling :cpp:func:`lammps_mpi_finalize`,
+       :cpp:func:`lammps_kokkos_finalize`, :cpp:func:`lammps_python_finalize`, and
+       :cpp:func:`lammps_plugin_finalize`
 
        You cannot create or use any LAMMPS instances after this function is called
        unless LAMMPS was compiled without MPI and without Kokkos support.
@@ -673,6 +670,8 @@ class lammps(object):
     self.close()
     self.lib.lammps_kokkos_finalize()
     self.lib.lammps_mpi_finalize()
+    self.lib.lammps_python_finalize()
+    self.lib.lammps_plugin_finalize()
 
   # -------------------------------------------------------------------------
 
@@ -717,8 +716,8 @@ class lammps(object):
     :rtype:  string
     """
 
-    sb = create_string_buffer(512)
-    self.lib.lammps_get_os_info(sb,512)
+    sb = create_string_buffer(LMP_BUFSIZE)
+    self.lib.lammps_get_os_info(sb, LMP_BUFSIZE)
     return sb.value.decode()
 
   # -------------------------------------------------------------------------
@@ -747,8 +746,8 @@ class lammps(object):
 
   @property
   def _lammps_exception(self):
-    sb = create_string_buffer(100)
-    error_type = self.lib.lammps_get_last_error_message(self.lmp, sb, 100)
+    sb = create_string_buffer(LMP_BUFSIZE)
+    error_type = self.lib.lammps_get_last_error_message(self.lmp, sb, LMP_BUFSIZE)
     error_msg = sb.value.decode().strip()
 
     if error_type == 2:
@@ -893,9 +892,8 @@ class lammps(object):
     box_change = c_int()
 
     with ExceptionCheck(self):
-      self.lib.lammps_extract_box(self.lmp,boxlo,boxhi,
-                                  byref(xy),byref(yz),byref(xz),
-                                  periodicity,byref(box_change))
+      self.lib.lammps_extract_box(self.lmp, boxlo, boxhi, byref(xy), byref(yz), byref(xz),
+                                  periodicity, byref(box_change))
 
     boxlo = boxlo[:3]
     boxhi = boxhi[:3]
@@ -1231,7 +1229,7 @@ class lammps(object):
     """
 
     tag = self.c_tagint(id)
-    return self.lib.lammps_map_atom(self.lmp, pointer(tag))
+    return self.lib.lammps_map_atom(self.lmp, byref(tag))
 
   # -------------------------------------------------------------------------
   # extract per-atom info datatype
@@ -1594,6 +1592,26 @@ class lammps(object):
 
   # -------------------------------------------------------------------------
 
+  def clearstep_compute(self, nextstep):
+    with ExceptionCheck(self):
+      return self.lib.lammps_clearstep_compute(self.lmp)
+
+  # -------------------------------------------------------------------------
+
+  def addstep_compute(self, nextstep):
+    with ExceptionCheck(self):
+      nextstep = self.c_bigint(nextstep)
+      return self.lib.lammps_addstep_compute(self.lmp, byref(nextstep))
+
+  # -------------------------------------------------------------------------
+
+  def addstep_compute_all(self, nextstep):
+    with ExceptionCheck(self):
+      nextstep = self.c_bigint(nextstep)
+      return self.lib.lammps_addstep_compute_all(self.lmp, byref(nextstep))
+
+  # -------------------------------------------------------------------------
+
   def flush_buffers(self):
     """Flush output buffers
 
@@ -1677,7 +1695,7 @@ class lammps(object):
   def eval(self, expr):
     """ Evaluate a LAMMPS immediate variable expression
 
-    .. versionadded:: TBD
+    .. versionadded:: 4Feb2025
 
     This function is a wrapper around the function :cpp:func:`lammps_eval`
     of the C library interface.  It evaluates and expression like in
@@ -1694,7 +1712,6 @@ class lammps(object):
 
     with ExceptionCheck(self):
       return self.lib.lammps_eval(self.lmp, newexpr)
-    return None
 
   # -------------------------------------------------------------------------
 
@@ -1981,7 +1998,7 @@ class lammps(object):
     """
 
     flags = (c_int*3)()
-    self.lib.lammps_decode_image_flags(image,byref(flags))
+    self.lib.lammps_decode_image_flags(image, byref(flags))
 
     return [int(i) for i in flags]
 
@@ -2086,6 +2103,28 @@ class lammps(object):
 
   # -------------------------------------------------------------------------
 
+  def create_molecule(self, id, jsonstr):
+    """ Create new molecule template from string with JSON data
+
+    .. versionadded:: TBD
+
+    This is a wrapper around the :cpp:func:`lammps_create_molecule` function
+    of the library interface.
+
+    :param id: molecule-id of the new molecule template
+    :type name: string
+    :param jsonstr: JSON data defining a new molecule template
+    :type jsonstr: string
+    """
+    if id: newid = id.encode()
+    else: newid = None
+    if id: newjsonstr = jsonstr.encode()
+    else: newjsonstr = None
+    with ExceptionCheck(self):
+      self.lib.lammps_create_molecule(self.lmp, newid, newjsonstr)
+
+  # -------------------------------------------------------------------------
+
   @property
   def has_mpi_support(self):
     """ Report whether the LAMMPS shared library was compiled with a
@@ -2116,6 +2155,27 @@ class lammps(object):
     :rtype: bool
     """
     return self.lib.lammps_is_running(self.lmp) == 1
+
+  # -------------------------------------------------------------------------
+
+  def set_show_error(self, flag):
+    """ Enable or disable direct printing of error messages in C++ code
+
+    .. versionadded:: 2Apr2025
+
+    This function allows to enable or disable printing of error message directly in
+    the C++ code.  Disabling the printing avoids printing error messages twice when
+    detecting and re-throwing them in Python code.
+
+    This is a wrapper around the :cpp:func:`lammps_set_show_error`
+    function of the library interface.
+
+    :param flag: enable (1) or disable (0) printing of error message
+    :type flag: int
+    :return: previous setting of the flag
+    :rtype: int
+    """
+    self.lib.lammps_set_show_error(self.lmp, flag)
 
   # -------------------------------------------------------------------------
 
@@ -2295,8 +2355,9 @@ class lammps(object):
     :rtype:  string
     """
 
-    sb = create_string_buffer(8192)
-    self.lib.lammps_get_gpu_device_info(sb,8192)
+    BUFSIZE = 8192
+    sb = create_string_buffer(BUFSIZE)
+    self.lib.lammps_get_gpu_device_info(sb, BUFSIZE)
     return sb.value.decode()
 
   # -------------------------------------------------------------------------
@@ -2313,9 +2374,9 @@ class lammps(object):
     if self._installed_packages is None:
       self._installed_packages = []
       npackages = self.lib.lammps_config_package_count()
-      sb = create_string_buffer(100)
+      sb = create_string_buffer(LMP_BUFSIZE)
       for idx in range(npackages):
-        self.lib.lammps_config_package_name(idx, sb, 100)
+        self.lib.lammps_config_package_name(idx, sb, LMP_BUFSIZE)
         self._installed_packages.append(sb.value.decode())
     return self._installed_packages
 
@@ -2351,6 +2412,7 @@ class lammps(object):
     :return: list of style names in given category
     :rtype:  list
     """
+    BUFSIZE = 8192
     if self._available_styles is None:
       self._available_styles = {}
 
@@ -2358,10 +2420,10 @@ class lammps(object):
       self._available_styles[category] = []
       with ExceptionCheck(self):
         nstyles = self.lib.lammps_style_count(self.lmp, category.encode())
-      sb = create_string_buffer(100)
+      sb = create_string_buffer(BUFSIZE)
       for idx in range(nstyles):
         with ExceptionCheck(self):
-          self.lib.lammps_style_name(self.lmp, category.encode(), idx, sb, 100)
+          self.lib.lammps_style_name(self.lmp, category.encode(), idx, sb, BUFSIZE)
         self._available_styles[category].append(sb.value.decode())
     return self._available_styles[category]
 
@@ -2406,9 +2468,9 @@ class lammps(object):
     available_ids = []
     if category in categories:
       num = self.lib.lammps_id_count(self.lmp, category.encode())
-      sb = create_string_buffer(100)
+      sb = create_string_buffer(LMP_BUFSIZE)
       for idx in range(num):
-        self.lib.lammps_id_name(self.lmp, category.encode(), idx, sb, 100)
+        self.lib.lammps_id_name(self.lmp, category.encode(), idx, sb, LMP_BUFSIZE)
         available_ids.append(sb.value.decode())
     return available_ids
 
@@ -2428,10 +2490,10 @@ class lammps(object):
 
     available_plugins = []
     num = self.lib.lammps_plugin_count(self.lmp)
-    sty = create_string_buffer(100)
-    nam = create_string_buffer(100)
+    sty = create_string_buffer(LMP_BUFSIZE)
+    nam = create_string_buffer(LMP_BUFSIZE)
     for idx in range(num):
-      self.lib.lammps_plugin_name(idx, sty, nam, 100)
+      self.lib.lammps_plugin_name(idx, sty, nam, LMP_BUFSIZE)
       available_plugins.append([sty.value.decode(), nam.value.decode()])
     return available_plugins
 
@@ -2676,7 +2738,8 @@ class lammps(object):
     c_iatom = c_int()
     c_numneigh = c_int()
     c_neighbors = POINTER(c_int)()
-    self.lib.lammps_neighlist_element_neighbors(self.lmp, idx, element, byref(c_iatom), byref(c_numneigh), byref(c_neighbors))
+    self.lib.lammps_neighlist_element_neighbors(self.lmp, idx, element, byref(c_iatom),
+                                                byref(c_numneigh), byref(c_neighbors))
     return c_iatom.value, c_numneigh.value, c_neighbors
 
   # -------------------------------------------------------------------------

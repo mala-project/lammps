@@ -129,6 +129,7 @@ FixPour::FixPour(LAMMPS *lmp, int narg, char **arg) :
     for (int i = 0; i < nmol; i++) {
       if (onemols[i]->xflag == 0) error->all(FLERR, "Fix pour molecule must have coordinates");
       if (onemols[i]->typeflag == 0) error->all(FLERR, "Fix pour molecule must have atom types");
+      if (onemols[i]->natoms <= 0) error->all(FLERR, "Fix pour molecule must have atoms");
       if (ntype + onemols[i]->ntypes <= 0 || ntype + onemols[i]->ntypes > atom->ntypes)
         error->all(FLERR, "Invalid atom type in fix pour mol command");
 
@@ -540,7 +541,7 @@ void FixPour::pre_exchange()
           delx = coords[m][0] - xnear[i][0];
           dely = coords[m][1] - xnear[i][1];
           delz = coords[m][2] - xnear[i][2];
-          domain->minimum_image(delx, dely, delz);
+          domain->minimum_image(FLERR, delx, dely, delz);
           rsq = delx * delx + dely * dely + delz * delz;
           radsum = coords[m][3] + xnear[i][3];
           if (rsq <= radsum * radsum) break;
@@ -781,7 +782,7 @@ int FixPour::overlap(int i)
       double delx = x[0] - xc;
       double dely = x[1] - yc;
       double delz = 0.0;
-      domain->minimum_image(delx, dely, delz);
+      domain->minimum_image(FLERR, delx, dely, delz);
       double rsq = delx * delx + dely * dely;
       double r = rc + delta;
       if (rsq > r * r) return 0;

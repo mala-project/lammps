@@ -20,7 +20,9 @@
 #include "domain.h"
 #include "error.h"
 #include "fix.h"
+#ifndef FMT_STATIC_THOUSANDS_SEPARATOR
 #include "fmt/chrono.h"
+#endif
 #include "input.h"
 #include "label_map.h"
 #include "memory.h"
@@ -32,6 +34,8 @@
 
 #include <cctype>
 #include <cerrno>
+#include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <ctime>
 #include <stdexcept>
@@ -156,7 +160,7 @@ std::string utils::strcompress(const std::string &text)
   }
 
   // remove trailing blank
-  if (output.back() == ' ') output.erase(output.size() - 1, 1);
+  if (!output.empty() && output.back() == ' ') output.erase(output.size() - 1, 1);
   return output;
 }
 
@@ -178,7 +182,8 @@ std::string utils::strfind(const std::string &text, const std::string &pattern)
 void utils::missing_cmd_args(const std::string &file, int line, const std::string &cmd,
                              Error *error)
 {
-  if (error) error->all(file, line, "Illegal {} command: missing argument(s)", cmd);
+  if (error)
+    error->all(file, line, Error::NOPOINTER, "Illegal {} command: missing argument(s)", cmd);
 }
 
 std::string utils::point_to_error(Input *input, int failed)
@@ -233,9 +238,9 @@ std::string utils::point_to_error(Input *input, int failed)
       // construct and append error indicator line
       cmdline += '\n';
       cmdline += std::string(indicator, ' ');
-      cmdline += std::string(strlen(input->arg[failed]) + quoted, '^');
+      cmdline += std::string(strlen((failed < 0) ? input->command : input->arg[failed])
+                             + quoted, '^');
       cmdline += '\n';
-
     } else {
       cmdline += lastline;
       cmdline += '\n';
@@ -262,9 +267,30 @@ void utils::fmtargs_logmesg(LAMMPS *lmp, fmt::string_view format, fmt::format_ar
   }
 }
 
+/* specialization for the case of just a single string argument */
+
+void utils::print(FILE *fp, const std::string &mesg)
+{
+  fputs(mesg.c_str(), fp);
+}
+
+void utils::print(const std::string &mesg)
+{
+  fputs(mesg.c_str(), stdout);
+}
+
+void utils::fmtargs_print(FILE *fp, fmt::string_view format, fmt::format_args args)
+{
+  print(fp, fmt::vformat(format, args));
+}
+
 std::string utils::errorurl(int errorcode)
 {
-  return fmt::format("\nFor more information see https://docs.lammps.org/err{:04d}", errorcode);
+  if (errorcode == 0)
+    return "\nFor more information see https://docs.lammps.org/Errors_details.html";
+  else if (errorcode > 0)
+    return fmt::format("\nFor more information see https://docs.lammps.org/err{:04d}", errorcode);
+  else return ""; // negative numbers are reserved for future use pointing to a different URL
 }
 
 void utils::flush_buffers(LAMMPS *lmp)
@@ -425,7 +451,7 @@ std::string utils::check_packages_for_style(const std::string &style, const std:
     if (LAMMPS::is_installed_pkg(pkg))
       errmsg += ", but seems to be missing because of a dependency";
     else
-      errmsg += " which is not enabled in this LAMMPS binary.";
+      errmsg += " which is not enabled in this LAMMPS binary." + utils::errorurl(10);
   }
   return errmsg;
 }
@@ -510,7 +536,7 @@ double utils::numeric(const char *file, int line, const std::string &str, bool d
       lmp->error->all(file, line, msg);
   }
 
-  double rv = 0;
+  double rv = 0.0;
   auto msg = fmt::format("Floating point number {} in input script or data file is invalid", buf);
   try {
     std::size_t endpos;
@@ -527,6 +553,12 @@ double utils::numeric(const char *file, int line, const std::string &str, bool d
     else
       lmp->error->all(file, line, msg);
   } catch (std::out_of_range const &) {
+    // could be a denormal number. try again with std::strtod().
+    char *end;
+    rv = std::strtod(buf.c_str(), &end);
+    // return value if denormal
+    if ((rv > -HUGE_VAL) && (rv < HUGE_VAL)) return rv;
+
     msg = fmt::format("Floating point number {} in input script or data file is out of range", buf);
     if (do_abort)
       lmp->error->one(file, line, msg);
@@ -790,13 +822,13 @@ void utils::bounds(const char *file, int line, const std::string &str,
   if (error) {
     if ((nlo <= 0) || (nhi <= 0))
       error->all(file, line, failed, "Invalid range string: {}", str);
-
+    constexpr char fmt[] = "Numeric index {} is out of bounds ({}-{}){}";
     if (nlo < nmin)
-      error->all(file, line, failed, "Numeric index {} is out of bounds ({}-{})", nlo, nmin, nmax);
+      error->all(file, line, failed, fmt, nlo, nmin, nmax, errorurl(19));
     else if (nhi > nmax)
-      error->all(file, line, failed, "Numeric index {} is out of bounds ({}-{})", nhi, nmin, nmax);
+      error->all(file, line, failed, fmt, nhi, nmin, nmax, errorurl(19));
     else if (nlo > nhi)
-      error->all(file, line, failed, "Numeric index {} is out of bounds ({}-{})", nlo, nmin, nhi);
+      error->all(file, line, failed, fmt, nlo, nmin, nhi, errorurl(19));
   }
 }
 
@@ -883,7 +915,7 @@ int utils::expand_args(const char *file, int line, int narg, char **arg, int mod
     // match grids
 
     if (strmatch(word, "^[cf]_\\w+:\\w+:\\w+\\[\\d*\\*\\d*\\]")) {
-      auto gridid = utils::parse_grid_id(FLERR, word, lmp->error);
+      auto gridid = utils::parse_grid_id(file, line, word, lmp->error);
 
       size_t first = gridid[2].find('[');
       size_t second = gridid[2].find(']', first + 1);
@@ -1027,6 +1059,9 @@ int utils::expand_args(const char *file, int line, int narg, char **arg, int mod
             if (nhi < MAXSMALLINT) {
               nmax = nhi;
               expandflag = 1;
+            } else {
+              lmp->error->all(file, line, ioffset + iarg,
+                              "Upper bound required to expand vector style variable {}", id);
             }
           }
         }
@@ -1227,8 +1262,8 @@ int utils::check_grid_reference(char *errstr, char *ref, int nevery, char *&id, 
         lmp->error->all(FLERR, "{} compute {} data {} is not per-grid array", errstr, idcompute,
                         dname);
       if (argi.get_dim() && argi.get_index1() > ncol)
-        lmp->error->all(FLERR, "{} compute {} array {} is accessed out-of-range", errstr, idcompute,
-                        dname);
+        lmp->error->all(FLERR, "{} compute {} array {} is accessed out-of-range{}", errstr,
+                        idcompute, dname, errorurl(20));
 
       id = utils::strdup(idcompute);
       return ArgInfo::COMPUTE;
@@ -1250,7 +1285,8 @@ int utils::check_grid_reference(char *errstr, char *ref, int nevery, char *&id, 
       if (ifix->pergrid_flag == 0)
         lmp->error->all(FLERR, "{} fix {} does not compute per-grid info", errstr, idfix);
       if (nevery % ifix->pergrid_freq)
-        lmp->error->all(FLERR, "{} fix {} not computed at compatible time", errstr, idfix);
+        lmp->error->all(FLERR, "{} fix {} not computed at compatible time{}", errstr, idfix,
+                        errorurl(7));
 
       int dim;
       igrid = ifix->get_grid_by_name(gname, dim);
@@ -1267,7 +1303,8 @@ int utils::check_grid_reference(char *errstr, char *ref, int nevery, char *&id, 
       if (argi.get_dim() > 0 && ncol == 0)
         lmp->error->all(FLERR, "{} fix {} data {} is not per-grid array", errstr, idfix, dname);
       if (argi.get_dim() > 0 && argi.get_index1() > ncol)
-        lmp->error->all(FLERR, "{} fix {} array {} is accessed out-of-range", errstr, idfix, dname);
+        lmp->error->all(FLERR, "{} fix {} array {} is accessed out-of-range{}", errstr, idfix,
+                        dname, errorurl(20));
 
       id = utils::strdup(idfix);
       return ArgInfo::FIX;
@@ -1934,8 +1971,15 @@ int utils::date2num(const std::string &date)
 std::string utils::current_date()
 {
   time_t tv = time(nullptr);
+#if defined(FMT_STATIC_THOUSANDS_SEPARATOR)
+  char outstr[200];
+  struct tm *today = localtime(&tv);
+  strftime(outstr, 200, "%Y-%m-%d", today);
+  return std::string(outstr);
+#else
   std::tm today = fmt::localtime(tv);
   return fmt::format("{:%Y-%m-%d}", today);
+#endif
 }
 
 /* ----------------------------------------------------------------------

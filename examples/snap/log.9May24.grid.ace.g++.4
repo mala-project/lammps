@@ -1,0 +1,70 @@
+LAMMPS (15 Jun 2023 - Development - 1c9d62543b-modified)
+OMP_NUM_THREADS environment is not set. Defaulting to 1 thread. (src/comm.cpp:98)
+  using 1 OpenMP thread(s) per MPI task
+Lattice spacing in x,y,z = 3.316 3.316 3.316
+Created orthogonal box = (0 0 0) to (3.316 3.316 3.316)
+  1 by 2 by 2 MPI processor grid
+Created 2 atoms
+  using lattice units in orthogonal box = (0 0 0) to (3.316 3.316 3.316)
+  create_atoms CPU = 0.001 seconds
+2 atoms in group acegroup
+potential file name (not local): coupling_coefficients.yace 
+potential file name (not local): coupling_coefficients.yace 
+potential file name (not local): coupling_coefficients.yace 
+potential file name (not local): coupling_coefficients.yace 
+WARNING: No fixes with time integration, atoms won't move (src/verlet.cpp:60)
+Generated 0 of 0 mixed pair_coeff terms from geometric mixing rule
+WARNING: More than one compute pace (src/ML-PACE/compute_pace.cpp:135)
+Neighbor list info ...
+  update: every = 1 steps, delay = 0 steps, check = yes
+  max neighbors/atom: 2000, page size: 100000
+  master list distance cutoff = 6.67637
+  ghost atom cutoff = 6.67637
+  binsize = 3.338185, bins = 1 1 1
+  2 neighbor lists, perpetual/occasional/extra = 1 1 0
+  (1) pair zero, perpetual
+      attributes: half, newton on
+      pair build: half/bin/atomonly/newton
+      stencil: half/bin/3d
+      bin: standard
+  (2) compute pace, occasional
+      attributes: full, newton on
+      pair build: full/bin/atomonly
+      stencil: full/bin/3d
+      bin: standard
+WARNING: Proc sub-domain size < neighbor skin, could lead to lost atoms (src/domain.cpp:966)
+Setting up Verlet run ...
+  Unit style    : metal
+  Current step  : 0
+  Time step     : 0.001
+Per MPI rank memory allocation (min/avg/max) = 73.23 | 73.23 | 73.23 Mbytes
+   Step        v_B5atom       v_B5grid    v_rmse_global 
+         0   0.37264346     0.37264346     5.5511151e-17
+Loop time of 4.885e-06 on 4 procs for 0 steps with 2 atoms
+
+51.2% CPU use with 4 MPI tasks x 1 OpenMP threads
+
+MPI task timing breakdown:
+Section |  min time  |  avg time  |  max time  |%varavg| %total
+---------------------------------------------------------------
+Pair    | 0          | 0          | 0          |   0.0 |  0.00
+Neigh   | 0          | 0          | 0          |   0.0 |  0.00
+Comm    | 0          | 0          | 0          |   0.0 |  0.00
+Output  | 0          | 0          | 0          |   0.0 |  0.00
+Modify  | 0          | 0          | 0          |   0.0 |  0.00
+Other   |            | 4.885e-06  |            |       |100.00
+
+Nlocal:            0.5 ave           1 max           0 min
+Histogram: 2 0 0 0 0 0 0 0 0 2
+Nghost:          274.5 ave         275 max         274 min
+Histogram: 2 0 0 0 0 0 0 0 0 2
+Neighs:             16 ave          40 max           0 min
+Histogram: 2 0 0 0 0 0 1 0 0 1
+FullNghs:           32 ave          64 max           0 min
+Histogram: 2 0 0 0 0 0 0 0 0 2
+
+Total # of neighbors = 128
+Ave neighs/atom = 64
+Neighbor list builds = 0
+Dangerous builds = 0
+Total wall time: 0:00:00

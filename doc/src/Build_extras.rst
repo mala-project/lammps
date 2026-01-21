@@ -35,6 +35,7 @@ This is the list of packages that may require additional steps.
    :columns: 6
 
    * :ref:`ADIOS <adios>`
+   * :ref:`APIP <apip>`
    * :ref:`ATC <atc>`
    * :ref:`AWPMD <awpmd>`
    * :ref:`COLVARS <colvar>`
@@ -255,11 +256,10 @@ Traditional make
 
 Before building LAMMPS, you must build the GPU library in ``lib/gpu``\ .
 You can do this manually if you prefer; follow the instructions in
-``lib/gpu/README``.  Note that the GPU library uses MPI calls, so you must
-use the same MPI library (or the STUBS library) settings as the main
-LAMMPS code.  This also applies to the ``-DLAMMPS_BIGBIG``\ ,
-``-DLAMMPS_SMALLBIG``\ , or ``-DLAMMPS_SMALLSMALL`` settings in whichever
-Makefile you use.
+``lib/gpu/README``.  Note that the GPU library uses MPI calls, so you
+must use the same MPI library (or the STUBS library) settings as the
+main LAMMPS code.  This also applies to the ``-DLAMMPS_BIGBIG`` or
+``-DLAMMPS_SMALLBIG`` settings in whichever Makefile you use.
 
 You can also build the library in one step from the ``lammps/src`` dir,
 using a command like these, which simply invokes the ``lib/gpu/Install.py``
@@ -612,6 +612,9 @@ They must be specified in uppercase.
    *  - ZEN3
       - HOST
       - AMD Zen3 architecture
+   *  - ZEN4
+      - HOST
+      - AMD Zen4 architecture
    *  - RISCV_SG2042
       - HOST
       - SG2042 (RISC-V) CPUs
@@ -715,7 +718,7 @@ They must be specified in uppercase.
       - GPU
       - Intel GPU Ponte Vecchio
 
-This list was last updated for version 4.5.1 of the Kokkos library.
+This list was last updated for version 4.6.0 of the Kokkos library.
 
 .. tabs::
 
@@ -1139,11 +1142,10 @@ POEMS package
 PYTHON package
 ---------------------------
 
-Building with the PYTHON package requires you have a the Python development
-headers and library available on your system, which needs to be a Python 2.7
-version or a Python 3.x version.  Since support for Python 2.x has ended,
-using Python 3.x is strongly recommended. See ``lib/python/README`` for
-additional details.
+Building with the PYTHON package requires you have a the Python
+development headers and library available on your system, which
+needs to be Python version 3.6 or later.  See ``lib/python/README``
+for additional details.
 
 .. tabs::
 
@@ -1159,7 +1161,7 @@ additional details.
       set the Python_EXECUTABLE variable to specify which Python
       interpreter should be used.  Note note that you will also need to
       have the development headers installed for this version,
-      e.g. python2-devel.
+      e.g. python3-devel.
 
    .. tab:: Traditional make
 
@@ -1268,6 +1270,34 @@ systems.
       .. code-block:: bash
 
          ADIOS2_DIR=path make yes-adios   # path is where ADIOS 2.x is installed
+
+----------
+
+.. _apip:
+
+APIP package
+-----------------------------
+
+The APIP package depends on the library of the
+:ref:`ML-PACE <ml-pace>` package.
+The code for the library can be found
+at: `https://github.com/ICAMS/lammps-user-pace/ <https://github.com/ICAMS/lammps-user-pace/>`_
+
+.. tabs::
+
+   .. tab:: CMake build
+
+      No additional settings are needed besides ``-D PKG_APIP=yes``
+      and ``-D PKG_ML-PACE=yes``.
+      One can use a local version of the ML-PACE library instead of
+      automatically downloading the library as described :ref:`here <ml-pace>`.
+
+
+   .. tab:: Traditional make
+
+      You need to install the ML-PACE package *first* and follow
+      the instructions :ref:`here <ml-pace>` before installing
+      the APIP package.
 
 ----------
 

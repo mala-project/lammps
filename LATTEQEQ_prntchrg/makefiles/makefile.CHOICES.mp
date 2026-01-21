@@ -1,0 +1,41 @@
+#
+# Compilation and link flags for LATTE
+#
+
+#
+# Precision - double or single
+#
+PRECISION = DOUBLE
+#PRECISION = SINGLE
+
+#
+# GPU available - OFF or ON
+GPUOPT = OFF
+
+#
+# Using DBCSR library from cp2k? OFF or ON
+#
+DBCSR_OPT = OFF
+
+# Parallelizing over k-points?
+MPIOPT = OFF
+
+#
+# CPU Fortran options
+#
+#FC = mpif90
+FC = gfortran
+FCL = $(FC)  -fopenmp
+FFLAGS =  -O3 -fopenmp -cpp
+LINKFLAG = -fopenmp
+#LIB = -lacml_mp
+LIB = -L/usr/projects/hpcsoft/toss2/common/acml/5.3.1/gfortran64_mp/lib -lacml_mp
+DBCSR_LIB = -L$(HOME)/cp2k/lib/$(USER)/popt -lcp2k_dbcsr_lib
+DBCSR_MOD = -I$(HOME)/cp2k/obj/$(USER)/popt
+
+#
+# GPU options
+#
+
+GPU_CUDA_LIB = -L/opt/cudatoolkit-5.5/lib64 -lcublas -lcudart
+GPU_ARCH = sm_20 
