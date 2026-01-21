@@ -85,13 +85,14 @@ TEST_F(SetTest, NoBoxNoAtoms)
     command("create_atoms 1 single 0.5 0.5 0.5");
     command("compute 0 all property/atom proc");
     END_HIDE_OUTPUT();
-    auto compute = lmp->modify->get_compute_by_id("0");
+    auto *compute = lmp->modify->get_compute_by_id("0");
     compute->compute_peratom();
     ASSERT_EQ(compute->vector_atom[0], 0);
 
     TEST_FAILURE(".*ERROR: Illegal set command: need at least four.*", command("set type 1 x"););
-    TEST_FAILURE(".*ERROR: Unknown set command style: xxx.*", command("set xxx 1 x 0.0"););
-    TEST_FAILURE(".*ERROR: Set keyword or custom property yyy does not exist.*",
+    TEST_FAILURE(".*ERROR: Unknown set or fix set command style: xxx.*",
+                 command("set xxx 1 x 0.0"););
+    TEST_FAILURE(".*ERROR: Unrecognized set or fix set command keyword yyy.*",
                  command("set type 1 yyy 0.0"););
 
     TEST_FAILURE(".*ERROR: Cannot set attribute spin/atom for atom style atomic.*",
@@ -119,7 +120,7 @@ TEST_F(SetTest, StylesTypes)
     command("compute 1 all property/atom id type mol");
     END_HIDE_OUTPUT();
 
-    auto compute = lmp->modify->get_compute_by_id("1");
+    auto *compute = lmp->modify->get_compute_by_id("1");
     ASSERT_NE(compute, nullptr);
     compute->compute_peratom();
 
@@ -409,7 +410,7 @@ TEST_F(SetTest, EffPackage)
     command("compute 2 all property/atom espin eradius");
     END_HIDE_OUTPUT();
 
-    auto compute = lmp->modify->get_compute_by_id("2");
+    auto *compute = lmp->modify->get_compute_by_id("2");
     ASSERT_NE(compute, nullptr);
     compute->compute_peratom();
 
@@ -447,9 +448,9 @@ TEST_F(SetTest, EffPackage)
     EXPECT_EQ(compute->array_atom[6][1], 0.5);
     EXPECT_EQ(compute->array_atom[7][1], 1.0);
 
-    TEST_FAILURE(".*ERROR on proc 0: Incorrect value for electron spin: 0.5.*",
+    TEST_FAILURE(".*Expected integer parameter instead of '0.5' in input script.*",
                  command("set atom * spin/electron 0.5"););
-    TEST_FAILURE(".*ERROR on proc 0: Incorrect value for electron radius: -0.5.*",
+    TEST_FAILURE(".*ERROR on proc 0: Invalid electron radius -0.5 in set.*",
                  command("set atom * radius/electron -0.5"););
 }
 
@@ -459,9 +460,6 @@ int main(int argc, char **argv)
 {
     MPI_Init(&argc, &argv);
     ::testing::InitGoogleMock(&argc, argv);
-
-    if (LAMMPS_NS::platform::mpi_vendor() == "Open MPI" && !Info::has_exceptions())
-        std::cout << "Warning: using OpenMPI without exceptions. Death tests will be skipped\n";
 
     // handle arguments passed via environment variable
     if (const char *var = getenv("TEST_ARGS")) {

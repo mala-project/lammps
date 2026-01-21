@@ -6,7 +6,7 @@ fix lb/fluid command
 Syntax
 """"""
 
-.. parsed-literal::
+.. code-block:: LAMMPS
 
    fix ID group-ID lb/fluid nevery viscosity density keyword values ...
 
@@ -130,7 +130,7 @@ calculated as:
 
 .. math::
 
-   {\bf F}_{j \alpha} = \gamma \left({\bf v}_n - {\bf u}_f \right) \zeta_{j\alpha}
+   \mathbf{F}_{j \alpha} = \gamma \left(\mathbf{v}_n - \mathbf{u}_f \right) \zeta_{j\alpha}
 
 where :math:`\mathbf{v}_n` is the velocity of the MD particle,
 :math:`\mathbf{u}_f` is the fluid velocity interpolated to the particle

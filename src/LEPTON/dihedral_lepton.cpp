@@ -29,6 +29,7 @@
 #include "neighbor.h"
 
 #include <cmath>
+#include <exception>
 
 #include "Lepton.h"
 #include "lepton_utils.h"
@@ -92,10 +93,17 @@ template <int EVFLAG, int EFLAG, int NEWTON_BOND> void DihedralLepton::eval()
 {
   std::vector<Lepton::CompiledExpression> dihedralforce;
   std::vector<Lepton::CompiledExpression> dihedralpot;
+  std::vector<bool> has_ref;
   try {
     for (const auto &expr : expressions) {
       auto parsed = Lepton::Parser::parse(LeptonUtils::substitute(expr, lmp));
       dihedralforce.emplace_back(parsed.differentiate("phi").createCompiledExpression());
+      has_ref.push_back(true);
+      try {
+        dihedralforce.back().getVariableReference("phi");
+      } catch (Lepton::Exception &) {
+        has_ref.back() = false;
+      }
       if (EFLAG) dihedralpot.emplace_back(parsed.createCompiledExpression());
     }
   } catch (std::exception &e) {
@@ -278,7 +286,7 @@ template <int EVFLAG, int EFLAG, int NEWTON_BOND> void DihedralLepton::eval()
     }
 
     const int idx = type2expression[type];
-    dihedralforce[idx].getVariableReference("phi") = phi;
+    if (has_ref[idx]) dihedralforce[idx].getVariableReference("phi") = phi;
     double m_du_dphi = -dihedralforce[idx].evaluate();
 
     // ----- Step 4: Calculate the force direction in real space -----
@@ -322,7 +330,11 @@ template <int EVFLAG, int EFLAG, int NEWTON_BOND> void DihedralLepton::eval()
 
     double edihedral = 0.0;
     if (EFLAG) {
-      dihedralpot[idx].getVariableReference("phi") = phi;
+      try {
+        dihedralpot[idx].getVariableReference("phi") = phi;
+      } catch (Lepton::Exception &) {
+        ;    // ignore -> constant potential
+      }
       edihedral = dihedralpot[idx].evaluate();
     }
     if (EVFLAG)
@@ -362,8 +374,18 @@ void DihedralLepton::coeff(int narg, char **arg)
     auto parsed = Lepton::Parser::parse(LeptonUtils::substitute(exp_one, lmp));
     auto dihedralpot = parsed.createCompiledExpression();
     auto dihedralforce = parsed.differentiate("phi").createCompiledExpression();
-    dihedralpot.getVariableReference("phi") = 0.0;
-    dihedralforce.getVariableReference("phi") = 0.0;
+    try {
+      dihedralpot.getVariableReference("phi") = 0.0;
+    } catch (Lepton::Exception &) {
+      if (comm->me == 0)
+        error->warning(FLERR, "Lepton potential expression {} does not depend on 'phi'", exp_one);
+    }
+    try {
+      dihedralforce.getVariableReference("phi") = 0.0;
+    } catch (Lepton::Exception &) {
+      if (comm->me == 0)
+        error->warning(FLERR, "Force from Lepton expression {} does not depend on 'phi'", exp_one);
+    }
     dihedralforce.evaluate();
   } catch (std::exception &e) {
     error->all(FLERR, e.what());
@@ -385,7 +407,7 @@ void DihedralLepton::coeff(int narg, char **arg)
     count++;
   }
 
-  if (count == 0) error->all(FLERR, "Incorrect args for dihedral coefficients");
+  if (count == 0) error->all(FLERR, "Incorrect args for dihedral coefficients" + utils::errorurl(21));
 }
 
 /* ----------------------------------------------------------------------
@@ -486,9 +508,9 @@ double DihedralLepton::get_phi(double const *x1,    //array holding x,y,z coords
   }
 
   //Consider periodic boundary conditions:
-  domain->minimum_image(vb12[0], vb12[1], vb12[2]);
-  domain->minimum_image(vb23[0], vb23[1], vb23[2]);
-  domain->minimum_image(vb34[0], vb34[1], vb34[2]);
+  domain->minimum_image(FLERR, vb12[0], vb12[1], vb12[2]);
+  domain->minimum_image(FLERR, vb23[0], vb23[1], vb23[2]);
+  domain->minimum_image(FLERR, vb34[0], vb34[1], vb34[2]);
 
   //--- Compute the normal to the planes formed by atoms 1,2,3 and 2,3,4 ---
 

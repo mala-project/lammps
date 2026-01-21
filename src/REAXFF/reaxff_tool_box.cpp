@@ -10,7 +10,7 @@
   Please cite the related publication:
   H. M. Aktulga, J. C. Fogarty, S. A. Pandit, A. Y. Grama,
   "Parallel Reactive Molecular Dynamics: Numerical Methods and
-  Algorithmic Techniques", Parallel Computing, in press.
+  Algorithmic Techniques", Parallel Computing, 38 (4-5), 245-259.
 
   This program is free software; you can redistribute it and/or
   modify it under the terms of the GNU General Public License as
@@ -101,6 +101,6 @@ void sfree(void *ptr)
   if (ptr == nullptr) return;
 
   free(ptr);
-  ptr = nullptr;
+  ptr = nullptr;  // NOTE: this has no effect
 }
 }    // namespace ReaxFF

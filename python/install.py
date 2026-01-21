@@ -18,7 +18,7 @@ parser = ArgumentParser(prog='install.py',
                         description='LAMMPS python package installer script')
 
 parser.add_argument("-p", "--package", required=True,
-                    help="path to the LAMMPS Python package")
+                    help="path to the LAMMPS Python package folder")
 parser.add_argument("-l", "--lib", required=True,
                     help="path to the compiled LAMMPS shared library")
 parser.add_argument("-n", "--noinstall", action="store_true", default=False,
@@ -27,6 +27,8 @@ parser.add_argument("-w", "--wheeldir", required=False,
                     help="path to a directory where the created wheel will be stored")
 parser.add_argument("-v", "--versionfile", required=True,
                     help="path to the LAMMPS version.h source file")
+parser.add_argument("-f", "--force", action="store_true", required=False, default=False,
+                    help="force installation of LAMMPS Python package")
 
 args = parser.parse_args()
 
@@ -34,15 +36,21 @@ args = parser.parse_args()
 
 if args.package:
   if not os.path.exists(args.package):
-    print("ERROR: LAMMPS package folder %s does not exist" % args.package)
+    print("\nERROR: LAMMPS package folder %s does not exist\n" % args.package)
     parser.print_help()
     sys.exit(1)
   else:
     args.package = os.path.abspath(args.package)
+    if ((os.path.basename(args.package) != "lammps")
+        and ((os.path.basename(os.path.dirname(args.package)) != "python"))):
+             print("\nERROR: LAMMPS package folder path %s does not end in %s\n"
+                   % (args.package, os.path.join("python", "lammps")))
+             parser.print_help()
+             sys.exit(1)
 
 if args.lib:
   if not os.path.exists(args.lib):
-    print("ERROR: LAMMPS shared library %s does not exist" % args.lib)
+    print("\nERROR: LAMMPS shared library %s does not exist\n" % args.lib)
     parser.print_help()
     sys.exit(1)
   else:
@@ -50,7 +58,7 @@ if args.lib:
 
 if args.wheeldir:
   if not os.path.exists(args.wheeldir):
-    print("ERROR: directory %s to store the wheel does not exist" % args.wheeldir)
+    print("\nERROR: directory %s to store the wheel does not exist\n" % args.wheeldir)
     parser.print_help()
     sys.exit(1)
   else:
@@ -58,7 +66,7 @@ if args.wheeldir:
 
 if args.versionfile:
   if not os.path.exists(args.versionfile):
-    print("ERROR: LAMMPS version file at %s does not exist" % args.versionfile)
+    print("\nERROR: LAMMPS version file at %s does not exist\n" % args.versionfile)
     parser.print_help()
     sys.exit(1)
   else:
@@ -139,7 +147,10 @@ else:
   py_exe = sys.executable
 
 try:
-  txt = subprocess.check_output([py_exe, '-m', 'pip', 'install', '--force-reinstall', wheel], stderr=subprocess.STDOUT, shell=False)
+  if args.force:
+    txt = subprocess.check_output([py_exe, '-m', 'pip', 'install', '--force-reinstall', '--break-system-packages', wheel], stderr=subprocess.STDOUT, shell=False)
+  else:
+    txt = subprocess.check_output([py_exe, '-m', 'pip', 'install', '--force-reinstall', wheel], stderr=subprocess.STDOUT, shell=False)
   print(txt.decode('UTF-8'))
   sys.exit(0)
 except subprocess.CalledProcessError as err:
@@ -148,7 +159,10 @@ except subprocess.CalledProcessError as err:
     sys.exit(errmsg + "You need to uninstall the LAMMPS python module manually first.\n")
 try:
   print('Installing wheel into system site-packages folder failed. Trying user folder now')
-  txt = subprocess.check_output([sys.executable, '-m', 'pip', 'install', '--user', '--force-reinstall', wheel], stderr=subprocess.STDOUT, shell=False)
+  if args.force:
+    txt = subprocess.check_output([sys.executable, '-m', 'pip', 'install', '--user', '--force-reinstall', '--break-system-packages', wheel], stderr=subprocess.STDOUT, shell=False)
+  else:
+    txt = subprocess.check_output([sys.executable, '-m', 'pip', 'install', '--user', '--force-reinstall', wheel], stderr=subprocess.STDOUT, shell=False)
   print(txt.decode('UTF-8'))
 except:
   sys.exit('Failed to install wheel ' + wheel)

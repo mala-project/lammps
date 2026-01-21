@@ -1,7 +1,7 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
    https://www.lammps.org/, Sandia National Laboratories
-   LAMMPS Development team: developers@lammps.org
+   LAMMPS development team: developers@lammps.org
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
    DE-AC04-94AL85000 with Sandia Corporation, the U.S. Government retains
@@ -29,7 +29,7 @@ class MLIAPModelPythonKokkos : public MLIAPModelPython, public MLIAPModelKokkos<
  public:
   MLIAPModelPythonKokkos(LAMMPS *, char * = nullptr);
   ~MLIAPModelPythonKokkos();
-  void read_coeffs(char *fname);
+  void read_coeffs(char *fname) override;
 
   void compute_gradients(class MLIAPData *) override;
   void compute_gradgrads(class MLIAPData *) override;

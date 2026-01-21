@@ -1,3 +1,4 @@
+# -*- CMake -*- file for tests of utily functions and classes in LAMMPS
 
 add_executable(test_tokenizer test_tokenizer.cpp)
 target_link_libraries(test_tokenizer PRIVATE lammps GTest::GMockMain)
@@ -47,6 +48,10 @@ endif()
 add_executable(test_fmtlib test_fmtlib.cpp)
 target_link_libraries(test_fmtlib PRIVATE lammps GTest::GMockMain)
 add_test(NAME FmtLib COMMAND test_fmtlib)
+
+add_executable(test_json test_json.cpp)
+target_link_libraries(test_json PRIVATE lammps GTest::GMockMain)
+add_test(NAME JSON COMMAND test_json)
 
 add_executable(test_math_eigen_impl test_math_eigen_impl.cpp)
 target_include_directories(test_math_eigen_impl PRIVATE ${LAMMPS_SOURCE_DIR})

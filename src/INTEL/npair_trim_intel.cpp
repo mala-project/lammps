@@ -88,7 +88,6 @@ void NPairTrimIntel::build_t(NeighList *list,
       for (int jj = 0; jj < jnum; jj++) {
         const int joriginal = jlist[jj];
         const int j = joriginal & NEIGHMASK;
-        int addme = 1;
 
         // trim to shorter cutoff
 
@@ -97,9 +96,7 @@ void NPairTrimIntel::build_t(NeighList *list,
         const flt_t delz = ztmp - x[j].z;
         const flt_t rsq = delx * delx + dely * dely + delz * delz;
 
-        if (rsq > cutsq_custom) addme = 0;
-
-        if (addme)
+        if (rsq <= cutsq_custom)
           neighptr[n++] = joriginal;
       }
 
@@ -119,7 +116,7 @@ void NPairTrimIntel::build_t(NeighList *list,
 
       ipage.vgot(n);
       if (ipage.status())
-        error->one(FLERR,"Neighbor list overflow, boost neigh_modify one");
+        error->one(FLERR, Error::NOLASTLINE, "Neighbor list overflow, boost neigh_modify one" + utils::errorurl(36));
     }
   }
   list->inum = inum_copy;

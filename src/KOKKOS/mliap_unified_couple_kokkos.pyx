@@ -8,11 +8,16 @@ try:
     import cupy
 except ImportError:
     pass
+try:
+    import torch
+except ImportError:
+    pass
 from libc.stdint cimport uintptr_t
 
 cimport cython
 from cpython.ref cimport PyObject
 from libc.stdlib cimport malloc, free
+from libc.string cimport memcpy
 
 
 cdef extern from "lammps.h" namespace "LAMMPS_NS":
@@ -59,6 +64,7 @@ cdef extern from "mliap_data_kokkos.h" namespace "LAMMPS_NS":
 
         int ntotal              # total number of owned and ghost atoms on this proc
         int nlistatoms          # current number of atoms in local atom lists
+        int nlocal
         int natomneigh          # current number of atoms and ghosts in atom neighbor arrays
         int * numneighs         # neighbors count for each atom
         int * iatoms            # index of each atom
@@ -77,6 +83,9 @@ cdef extern from "mliap_data_kokkos.h" namespace "LAMMPS_NS":
         int vflag               # indicates if virial is needed
         void * pairmliap        # pointer to base class
         int dev
+
+        void forward_exchange[CommType]  (CommType * copy_from, CommType * copy_to, int vec_len) except +
+        void reverse_exchange[CommType] (CommType * copy_from, CommType * copy_to, int vec_len) except +
 
 cdef extern from "mliap_unified_kokkos.h" namespace "LAMMPS_NS":
     cdef cppclass MLIAPDummyDescriptor:
@@ -133,14 +142,14 @@ cdef create_array(device, void *pointer, shape,is_int):
                 return np.asarray(<int[:shape[0],:shape[1]]>pointer)
             else:
                 return np.asarray(<double[:shape[0],:shape[1]]>pointer)
-            
+
 
 
 # Cython implementation of MLIAPData
 # Automatically converts between C arrays and numpy when needed
 cdef class MLIAPDataPy:
     cdef MLIAPDataKokkosDevice * data
-    
+
     def __cinit__(self):
         self.data = NULL
 
@@ -157,7 +166,7 @@ cdef class MLIAPDataPy:
             ptr = eij.data.ptr
         except:
             ptr = eij.data_ptr()
-        update_pair_energy(self.data, <double*>ptr)  
+        update_pair_energy(self.data, <double*>ptr)
     def update_pair_energy(self, eij):
         if self.data.dev==0:
             self.update_pair_energy_cpu(eij)
@@ -177,23 +186,86 @@ cdef class MLIAPDataPy:
             ptr = fij.data.ptr
         except:
             ptr = fij.data_ptr()
-        update_pair_forces(self.data, <double*>ptr)  
+        update_pair_forces(self.data, <double*>ptr)
     def update_pair_forces(self, fij):
         if self.data.dev==0:
             self.update_pair_forces_cpu(fij)
         else:
             self.update_pair_forces_gpu(fij)
+
+    def forward_exchange(self, copy_from, copy_to, vec_len):
+        cdef uintptr_t copy_from_ptr, copy_to_ptr;
+
+        copy_from_dtype = copy_from.dtype
+        copy_to_dtype = copy_to.dtype
+        if copy_from_dtype != copy_to_dtype:
+            raise TypeError(f"Types of ({copy_from_dtype})copy_from and ({copy_to_dtype})copy_to mismatch")
+
+        try:
+            #Attempt assuming PyTorch data
+            copy_from_ptr = copy_from.data_ptr()
+            copy_to_ptr = copy_to.data_ptr()
+
+            if copy_from_dtype == torch.float32:
+                self.data.forward_exchange( <float*>copy_from_ptr, <float*>copy_to_ptr, vec_len)
+            elif copy_from_dtype == torch.float64:
+                self.data.forward_exchange( <double*>copy_from_ptr, <double*>copy_to_ptr, vec_len)
+            else:
+                raise TypeError(f"Unsupported comms type: ({copy_from_dtype})")
+        except:
+            #Attempt assuming Numpy data
+            copy_from_ptr = copy_from.data.ptr
+            copy_to_ptr = copy_to.data.ptr
+
+            if copy_from_dtype == np.float32:
+                self.data.forward_exchange( <float*>copy_from_ptr, <float*>copy_to_ptr, vec_len)
+            elif copy_from_dtype == np.float64:
+                self.data.forward_exchange( <double*>copy_from_ptr, <double*>copy_to_ptr, vec_len)
+            else:
+                raise TypeError(f"Unsupported comms type: ({copy_from_dtype})")
+
+    def reverse_exchange(self, copy_from, copy_to, vec_len):
+        cdef uintptr_t copy_from_ptr, copy_to_ptr;
+
+        copy_from_dtype = copy_from.dtype
+        copy_to_dtype = copy_to.dtype
+        if copy_from_dtype != copy_to_dtype:
+            raise TypeError(f"Types of ({copy_from_dtype})copy_from and ({copy_to_dtype})copy_to mismatch")
+
+        try:
+            #Attempt assuming PyTorch data
+            copy_from_ptr = copy_from.data_ptr()
+            copy_to_ptr = copy_to.data_ptr()
+
+            if copy_from_dtype == torch.float32:
+                self.data.reverse_exchange( <float*>copy_from_ptr, <float*>copy_to_ptr, vec_len)
+            elif copy_from_dtype == torch.float64:
+                self.data.reverse_exchange( <double*>copy_from_ptr, <double*>copy_to_ptr, vec_len)
+            else:
+                raise TypeError(f"Unsupported comms type: ({copy_from_dtype})")
+        except:
+            #Attempt assuming Numpy data
+            copy_from_ptr = copy_from.data.ptr
+            copy_to_ptr = copy_to.data.ptr
+
+            if copy_from_dtype == np.float32:
+                self.data.reverse_exchange( <float*>copy_from_ptr, <float*>copy_to_ptr, vec_len)
+            elif copy_from_dtype == np.float64:
+                self.data.reverse_exchange( <double*>copy_from_ptr, <double*>copy_to_ptr, vec_len)
+            else:
+                raise TypeError(f"Unsupported comms type: ({copy_from_dtype})")
+        
     @property
     def f(self):
         if self.data.f is NULL:
             return None
         return create_array(self.data.dev, self.data.f, [self.ntotal, 3],False)
 
-    
+
     @property
     def size_gradforce(self):
         return self.data.size_gradforce
- 
+
     @write_only_property
     def gradforce(self, value):
         if self.data.gradforce is NULL:
@@ -202,7 +274,7 @@ cdef class MLIAPDataPy:
         cdef double[:, :] value_view = value
         gradforce_view[:] = value_view
         print("This code has not been tested or optimized for the GPU, if you are getting this warning optimize gradforce")
- 
+
     @write_only_property
     def betas(self, value):
         if self.data.betas is NULL:
@@ -280,7 +352,7 @@ cdef class MLIAPDataPy:
     @property
     def ntotal(self):
         return self.data.ntotal
-    
+
     @property
     def elems(self):
         if self.data.elems is NULL:
@@ -290,7 +362,11 @@ cdef class MLIAPDataPy:
     @property
     def nlistatoms(self):
         return self.data.nlistatoms
-    
+
+    @property
+    def nlocal(self):
+        return self.data.nlocal
+
     @property
     def natomneigh(self):
         return self.data.natomneigh
@@ -306,7 +382,7 @@ cdef class MLIAPDataPy:
         if self.data.iatoms is NULL:
             return None
         return create_array(self.data.dev, self.data.iatoms, [self.natomneigh],True)
-    
+
     @property
     def ielems(self):
         if self.data.ielems is NULL:
@@ -322,7 +398,7 @@ cdef class MLIAPDataPy:
         if self.data.pair_i is NULL:
             return None
         return create_array(self.data.dev, self.data.pair_i, [self.npairs],True)
-    
+
     @property
     def pair_j(self):
         return self.jatoms
@@ -332,7 +408,7 @@ cdef class MLIAPDataPy:
         if self.data.jatoms is NULL:
             return None
         return create_array(self.data.dev, self.data.jatoms, [self.npairs],True)
-    
+
     @property
     def jelems(self):
         if self.data.jelems is NULL:
@@ -383,13 +459,13 @@ cdef class MLIAPUnifiedInterfaceKokkos:
         self.model = NULL
         self.descriptor = NULL
         self.unified_impl = unified_impl
-    
+
     def compute_gradients(self, data):
         self.unified_impl.compute_gradients(data)
-    
+
     def compute_descriptors(self, data):
         self.unified_impl.compute_descriptors(data)
-    
+
     def compute_forces(self, data):
         self.unified_impl.compute_forces(data)
 
@@ -422,7 +498,7 @@ cdef public object mliap_unified_connect_kokkos(char *fname, MLIAPDummyModel * m
         unified = LOADED_MODEL
     elif str_fname.endswith(".pt") or str_fname.endswith('.pth'):
         import torch
-        unified = torch.load(str_fname)
+        unified = torch.load(str_fname,weights_only=False)
     else:
         with open(str_fname, 'rb') as pfile:
             unified = pickle.load(pfile)
@@ -443,21 +519,32 @@ cdef public object mliap_unified_connect_kokkos(char *fname, MLIAPDummyModel * m
 
     if unified.element_types is None:
         raise ValueError("no element type set")
-    
+
     cdef int nelements = <int>len(unified.element_types)
     cdef char **elements = <char**>malloc(nelements * sizeof(char*))
+    cdef char * c_str
+    cdef char * s
+    cdef ssize_t slen
 
     if not elements:
         raise MemoryError("failed to allocate memory for element names")
 
-    cdef char *elem_name
     for i, elem in enumerate(unified.element_types):
-        elem_name_bytes = elem.encode('UTF-8')
-        elem_name = elem_name_bytes
-        elements[i] = &elem_name[0]
+        py_str = elem.encode('UTF-8')
+        s = py_str
+        slen = len(py_str)
+        c_str = <char *>malloc((slen+1)*sizeof(char))
+        if not c_str:
+            raise MemoryError("failed to allocate memory for element names")
+        memcpy(c_str, s, slen)
+        c_str[slen] = 0
+        elements[i] = c_str
+
     unified_int.descriptor.set_elements(elements, nelements)
     unified_int.model.nelements = nelements
 
+    for i, elem in enumerate(unified.element_types):
+        free(elements[i])
     free(elements)
     return unified_int
 

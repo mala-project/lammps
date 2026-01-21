@@ -110,17 +110,33 @@ TEST_F(Advanced_utils, expand_args)
 {
     atomic_system();
     BEGIN_CAPTURE_OUTPUT();
-    command("compute temp all temp");
-    command("variable temp vector c_temp");
-    command("variable step equal step");
-    command("variable pe equal pe");
-    command("variable pe equal pe");
-    command("variable epair equal epair");
-    command("compute gofr all rdf 20 1 1 1 2");
-    command("fix 1 all ave/time 1 1 1 v_step v_pe v_epair");
-    command("fix 2 all nve");
-    command("run 1 post no");
+    try {
+        command("compute temp all temp");
+        command("variable temp vector c_temp");
+        command("variable step equal step");
+        command("variable pe equal pe");
+        command("variable pe equal pe");
+        command("variable epair equal epair");
+        command("compute gofr all rdf 20 1 1 1 2");
+        command("fix 1 all ave/time 1 1 1 v_step v_pe v_epair");
+        command("fix 2 all nve");
+        command("run 1 post no");
+    } catch (LAMMPSAbortException &ae) {
+        fprintf(stderr, "LAMMPS Error: %s\n", ae.what());
+        exit(2);
+    } catch (LAMMPSException &e) {
+        fprintf(stderr, "LAMMPS Error: %s\n", e.what());
+        exit(3);
+    } catch (fmt::format_error &fe) {
+        fprintf(stderr, "fmt::format_error: %s\n", fe.what());
+        exit(4);
+    } catch (std::exception &e) {
+        fprintf(stderr, "General exception: %s\n", e.what());
+        exit(5);
+    }
+
     auto output = END_CAPTURE_OUTPUT();
+    if (verbose) std::cout << output << std::endl;
 
     char **args, **earg;
     constexpr int oarg = 9;
@@ -134,6 +150,10 @@ TEST_F(Advanced_utils, expand_args)
     args[6]            = utils::strdup("c_gofr[1][*]");
     args[7]            = utils::strdup("c_gofr[*2][2]");
     args[8]            = utils::strdup("c_gofr[*][*]");
+
+    // disable use of input->command and input->arg which point to the last run command right now
+    lmp->input->command = nullptr;
+    lmp->input->arg     = nullptr;
 
     auto narg = utils::expand_args(FLERR, oarg, args, 0, earg, lmp);
     EXPECT_EQ(narg, 16);
@@ -194,8 +214,13 @@ TEST_F(Advanced_utils, expand_args)
     args[5][7] = '3';
     delete[] args[4];
     args[4] = utils::strdup("v_temp[2*]");
+    TEST_FAILURE("ERROR: Upper bound required to expand vector style variable temp.*",
+                 utils::expand_args(FLERR, oarg, args, 0, earg, lmp););
+
+    delete[] args[4];
+    args[4] = utils::strdup("v_temp[*2]");
     narg    = utils::expand_args(FLERR, oarg, args, 0, earg, lmp);
-    EXPECT_EQ(narg, 13);
+    EXPECT_EQ(narg, 14);
     EXPECT_STREQ(earg[0], "v_step");
     EXPECT_STREQ(earg[1], "c_temp");
     EXPECT_STREQ(earg[2], "f_1[1]");
@@ -204,11 +229,12 @@ TEST_F(Advanced_utils, expand_args)
     EXPECT_STREQ(earg[5], "c_temp[2]");
     EXPECT_STREQ(earg[6], "c_temp[3]");
     EXPECT_STREQ(earg[7], "c_temp[4]");
-    EXPECT_STREQ(earg[8], "v_temp[2*]");
-    EXPECT_STREQ(earg[9], "c_gofr[3*]");
-    EXPECT_STREQ(earg[10], "c_gofr[1][*]");
-    EXPECT_STREQ(earg[11], "c_gofr[*2][2]");
-    EXPECT_STREQ(earg[12], "c_gofr[*][*]");
+    EXPECT_STREQ(earg[8], "v_temp[1]");
+    EXPECT_STREQ(earg[9], "v_temp[2]");
+    EXPECT_STREQ(earg[10], "c_gofr[3*]");
+    EXPECT_STREQ(earg[11], "c_gofr[1][*]");
+    EXPECT_STREQ(earg[12], "c_gofr[*2][2]");
+    EXPECT_STREQ(earg[13], "c_gofr[*][*]");
 
     for (int i = 0; i < narg; ++i)
         delete[] earg[i];
@@ -223,9 +249,6 @@ int main(int argc, char **argv)
 {
     MPI_Init(&argc, &argv);
     ::testing::InitGoogleMock(&argc, argv);
-
-    if (LAMMPS_NS::platform::mpi_vendor() == "Open MPI" && !Info::has_exceptions())
-        std::cout << "Warning: using OpenMPI without exceptions. Death tests will be skipped\n";
 
     // handle arguments passed via environment variable
     if (const char *var = getenv("TEST_ARGS")) {

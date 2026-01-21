@@ -21,6 +21,7 @@
 #include "angle.h"
 #include "atom_kokkos.h"
 #include "atom_masks.h"
+#include "atom_vec.h"
 #include "bond.h"
 #include "comm.h"
 #include "compute.h"
@@ -59,6 +60,9 @@ void MinKokkos::init()
 {
   Min::init();
 
+  if (!fix_minimize->kokkosable)
+    error->all(FLERR,"KOKKOS package requires fix minimize/kk");
+
   fix_minimize_kk = (FixMinimizeKokkos*) fix_minimize;
 }
 
@@ -69,11 +73,10 @@ void MinKokkos::init()
 void MinKokkos::setup(int flag)
 {
   if (comm->me == 0 && screen) {
-    fmt::print(screen,"Setting up {} style minimization ...\n",
-               update->minimize_style);
+    utils::print(screen,"Setting up {} style minimization ...\n", update->minimize_style);
     if (flag) {
-      fmt::print(screen,"  Unit style    : {}\n", update->unit_style);
-      fmt::print(screen,"  Current step  : {}\n", update->ntimestep);
+      utils::print(screen,"  Unit style    : {}\n", update->unit_style);
+      utils::print(screen,"  Current step  : {}\n", update->ntimestep);
       timer->print_timeout(screen);
     }
   }
@@ -89,14 +92,13 @@ void MinKokkos::setup(int flag)
     fextra = new double[nextra_global];
     if (comm->me == 0)
       error->warning(FLERR, "Energy due to {} extra global DOFs will"
-                     " be included in minimizer energies\n", nextra_global);
+                     " be included in minimizer energies\n",nextra_global);
   }
 
   // compute for potential energy
 
-  int id = modify->find_compute("thermo_pe");
-  if (id < 0) error->all(FLERR,"Minimization could not find thermo_pe compute");
-  pe_compute = modify->compute[id];
+  pe_compute = modify->get_compute_by_id("thermo_pe");
+  if (!pe_compute) error->all(FLERR,"Minimization could not find thermo_pe compute");
 
   // style-specific setup does two tasks
   // setup extra global dof vectors
@@ -170,7 +172,7 @@ void MinKokkos::setup(int flag)
     force->pair->compute(eflag,vflag);
     atomKK->modified(force->pair->execution_space,force->pair->datamask_modify);
   }
-  else if (force->pair) force->pair->compute_dummy(eflag,vflag);
+  else if (force->pair) force->pair->compute_dummy(eflag,vflag,0);
 
   if (atom->molecular != Atom::ATOMIC) {
     if (force->bond) {
@@ -201,7 +203,7 @@ void MinKokkos::setup(int flag)
       atomKK->sync(force->kspace->execution_space,force->kspace->datamask_read);
       force->kspace->compute(eflag,vflag);
       atomKK->modified(force->kspace->execution_space,force->kspace->datamask_modify);
-    } else force->kspace->compute_dummy(eflag,vflag);
+    } else force->kspace->compute_dummy(eflag,vflag,0);
   }
 
   modify->setup_pre_reverse(eflag,vflag);
@@ -279,7 +281,7 @@ void MinKokkos::setup_minimal(int flag)
     force->pair->compute(eflag,vflag);
     atomKK->modified(force->pair->execution_space,force->pair->datamask_modify);
   }
-  else if (force->pair) force->pair->compute_dummy(eflag,vflag);
+  else if (force->pair) force->pair->compute_dummy(eflag,vflag,0);
 
   if (atom->molecular != Atom::ATOMIC) {
     if (force->bond) {
@@ -310,7 +312,7 @@ void MinKokkos::setup_minimal(int flag)
       atomKK->sync(force->kspace->execution_space,force->kspace->datamask_read);
       force->kspace->compute(eflag,vflag);
       atomKK->modified(force->kspace->execution_space,force->kspace->datamask_modify);
-    } else force->kspace->compute_dummy(eflag,vflag);
+    } else force->kspace->compute_dummy(eflag,vflag,0);
   }
 
   modify->setup_pre_reverse(eflag,vflag);
@@ -534,6 +536,7 @@ double MinKokkos::energy_force(int resetflag)
     if (resetflag) fix_minimize_kk->reset_coords();
     reset_vectors();
   }
+
   return energy;
 }
 
@@ -572,7 +575,14 @@ void MinKokkos::force_clear()
         l_torque(i,2) = 0.0;
       }
     });
+
+    if (extraflag) {
+      size_t nbytes = sizeof(double) * atom->nlocal;
+      if (force->newton) nbytes += sizeof(double) * atom->nghost;
+      atom->avec->force_clear(0,nbytes);
+    }
   }
+
   atomKK->modified(Device,F_MASK|TORQUE_MASK);
 }
 

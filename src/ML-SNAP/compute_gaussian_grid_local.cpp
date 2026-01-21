@@ -1,7 +1,7 @@
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
    https://www.lammps.org/ Sandia National Laboratories
-   Steve Plimpton, sjplimp@sandia.gov
+   LAMMPS development team: developers@lammps.org
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
    DE-AC04-94AL85000 with Sandia Corporation, the U.S. Government retains
@@ -61,9 +61,8 @@ ComputeGaussianGridLocal::ComputeGaussianGridLocal(LAMMPS *lmp, int narg, char *
   for (int i = 0; i < ntypes; i++) radelem[i + 1] = utils::numeric(FLERR, arg[4 + i], false, lmp);
   for (int i = 0; i < ntypes; i++)
     sigmaelem[i + 1] = utils::numeric(FLERR, arg[ntypes + 4 + i], false, lmp);
-  
-  // construct cutsq
 
+  // construct cutsq
   double cut;
   cutmax = 0.0;
   memory->create(cutsq, ntypes + 1, ntypes + 1, "gaussian/atom:cutsq");
@@ -80,7 +79,6 @@ ComputeGaussianGridLocal::ComputeGaussianGridLocal(LAMMPS *lmp, int narg, char *
   size_local_cols = size_local_cols_base + ntypes;
 
   // pre-compute coefficients
-  
   for (int i = 0; i < ntypes; i++) {
     prefacelem[i + 1] = 1.0/powint(sigmaelem[i + 1] * sqrt(MY_2PI), 3);
     argfacelem[i + 1] = 1.0/(2.0 * sigmaelem[i + 1] * sigmaelem[i + 1]);
@@ -91,14 +89,12 @@ ComputeGaussianGridLocal::ComputeGaussianGridLocal(LAMMPS *lmp, int narg, char *
 
 ComputeGaussianGridLocal::~ComputeGaussianGridLocal()
 {
-  //printf(">>> ComputeGaussianGridLocal begin destruct copymode %d\n", copymode);
   if (copymode) return;
   memory->destroy(radelem);
   memory->destroy(sigmaelem);
   memory->destroy(prefacelem);
   memory->destroy(argfacelem);
   memory->destroy(cutsq);
-  //printf(">>> ComputeGaussianGridLocal end destruct\n");
 }
 
 /* ---------------------------------------------------------------------- */
@@ -113,8 +109,6 @@ void ComputeGaussianGridLocal::init()
 
 void ComputeGaussianGridLocal::compute_local()
 {
-  //printf(">>> compute_local CPU\n");
-  //printf(">>> size_local_cols_base, size_local_cols: %d %d\n", size_local_cols_base, size_local_cols);
   invoked_local = update->ntimestep;
 
   // compute gaussian for each gridpoint
@@ -155,7 +149,7 @@ void ComputeGaussianGridLocal::compute_local()
             alocal[igrid][icol] += prefacelem[jtype] * exp(-rsq * argfacelem[jtype]);
           }
         }
-	    igrid++;
+        igrid++;
   }
 }
 

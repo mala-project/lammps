@@ -171,7 +171,7 @@ void PairCoulCut::settings(int narg, char **arg)
 
 void PairCoulCut::coeff(int narg, char **arg)
 {
-  if (narg < 2 || narg > 3) error->all(FLERR, "Incorrect args for pair coefficients");
+  if (narg < 2 || narg > 3) error->all(FLERR, "Incorrect args for pair coefficients" + utils::errorurl(21));
   if (!allocated) allocate();
 
   int ilo, ihi, jlo, jhi;
@@ -191,7 +191,7 @@ void PairCoulCut::coeff(int narg, char **arg)
     }
   }
 
-  if (count == 0) error->all(FLERR, "Incorrect args for pair coefficients");
+  if (count == 0) error->all(FLERR, "Incorrect args for pair coefficients" + utils::errorurl(21));
 }
 
 /* ----------------------------------------------------------------------
@@ -331,8 +331,8 @@ double PairCoulCut::single(int i, int j, int /*itype*/, int /*jtype*/, double rs
 /* ---------------------------------------------------------------------- */
 
 void PairCoulCut::born_matrix(int i, int j, int /*itype*/, int /*jtype*/, double rsq,
-                            double factor_coul, double /*factor_lj*/, double &dupair,
-                            double &du2pair)
+                              double factor_coul, double /*factor_lj*/, double &dupair,
+                              double &du2pair)
 {
   double rinv, r2inv, r3inv;
   double du_coul, du2_coul;

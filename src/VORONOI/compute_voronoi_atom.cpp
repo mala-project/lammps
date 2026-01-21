@@ -35,15 +35,14 @@
 using namespace LAMMPS_NS;
 using namespace voro;
 
-#define FACESDELTA 10000
+static constexpr int FACESDELTA = 10000;
 
 /* ---------------------------------------------------------------------- */
 
 ComputeVoronoi::ComputeVoronoi(LAMMPS *lmp, int narg, char **arg) :
-  Compute(lmp, narg, arg), con_mono(nullptr), con_poly(nullptr),
-  radstr(nullptr), voro(nullptr), edge(nullptr), sendvector(nullptr),
-  rfield(nullptr), tags(nullptr), occvec(nullptr), sendocc(nullptr),
-  lroot(nullptr), lnext(nullptr), faces(nullptr)
+  Compute(lmp, narg, arg), con_mono(nullptr), con_poly(nullptr), radstr(nullptr),
+  voro(nullptr), edge(nullptr), sendvector(nullptr), rfield(nullptr), tags(nullptr),
+  occvec(nullptr), lroot(nullptr), lnext(nullptr), faces(nullptr)
 {
   int sgroup;
 
@@ -55,16 +54,10 @@ ComputeVoronoi::ComputeVoronoi(LAMMPS *lmp, int narg, char **arg) :
   surface = VOROSURF_NONE;
   maxedge = 0;
   fthresh = ethresh = 0.0;
-  radstr = nullptr;
   onlyGroup = false;
   occupation = false;
 
-  con_mono = nullptr;
-  con_poly = nullptr;
-  tags = nullptr;
   oldmaxtag = 0;
-  occvec = sendocc = lroot = lnext = nullptr;
-  faces = nullptr;
 
   int iarg = 3;
   while (iarg<narg) {
@@ -79,6 +72,7 @@ ComputeVoronoi::ComputeVoronoi(LAMMPS *lmp, int narg, char **arg) :
     else if (strcmp(arg[iarg], "radius") == 0) {
       if (iarg + 2 > narg || strstr(arg[iarg+1],"v_") != arg[iarg+1] )
         error->all(FLERR,"Illegal compute voronoi/atom command");
+      delete[] radstr;
       radstr = utils::strdup(&arg[iarg+1][2]);
       iarg += 2;
     }
@@ -111,12 +105,7 @@ ComputeVoronoi::ComputeVoronoi(LAMMPS *lmp, int narg, char **arg) :
       if (iarg + 2 > narg) error->all(FLERR,"Illegal compute voronoi/atom command");
       faces_flag = utils::logical(FLERR,arg[iarg+1],false,lmp);
       iarg += 2;
-    } else if (strcmp(arg[iarg], "peratom") == 0) {
-      if (iarg + 2 > narg) error->all(FLERR,"Illegal compute voronoi/atom command");
-      peratom_flag = utils::logical(FLERR,arg[iarg+1],false,lmp);
-      iarg += 2;
-    }
-    else error->all(FLERR,"Illegal compute voronoi/atom command");
+    } else error->all(FLERR,"Illegal compute voronoi/atom command");
   }
 
   if (occupation && ( surface!=VOROSURF_NONE || maxedge>0 ) )
@@ -131,6 +120,7 @@ ComputeVoronoi::ComputeVoronoi(LAMMPS *lmp, int narg, char **arg) :
 
   if (maxedge > 0) {
     vector_flag = 1;
+    extvector = 0;
     size_vector = maxedge+1;
     memory->create(edge,maxedge+1,"voronoi/atom:edge");
     memory->create(sendvector,maxedge+1,"voronoi/atom:sendvector");
@@ -165,9 +155,6 @@ ComputeVoronoi::~ComputeVoronoi()
   memory->destroy(lroot);
   memory->destroy(lnext);
   memory->destroy(occvec);
-#ifdef NOTINPLACE
-  memory->destroy(sendocc);
-#endif
   memory->destroy(tags);
   memory->destroy(faces);
 }
@@ -220,9 +207,6 @@ void ComputeVoronoi::compute_peratom()
       oldnatoms = atom->natoms;
       oldmaxtag = atom->map_tag_max;
       memory->create(occvec,oldmaxtag,"voronoi/atom:occvec");
-#ifdef NOTINPLACE
-      memory->create(sendocc,oldmaxtag,"voronoi/atom:sendocc");
-#endif
     }
 
     // get the occupation of each original voronoi cell
@@ -394,27 +378,29 @@ void ComputeVoronoi::checkOccupation()
   // clear occupation vector
   memset(occvec, 0, oldnatoms*sizeof(*occvec));
 
-  int i, j, k,
-      nlocal = atom->nlocal,
-      nall = atom->nghost + nlocal;
-  double rx, ry, rz,
-         **x = atom->x;
+  int i, j, k;
+  double rx, ry, rz;
+
+  int nlocal = atom->nlocal;
+  int nall = atom->nghost + nlocal;
+  double **x = atom->x;
 
   // prepare destination buffer for variable evaluation
+
   if (atom->nmax > lmax) {
     memory->destroy(lnext);
     lmax = atom->nmax;
     memory->create(lnext,lmax,"voronoi/atom:lnext");
   }
 
-  // clear lroot
-  for (i=0; i<oldnall; ++i) lroot[i] = -1;
+  // clear lroot and lnext
 
-  // clear lnext
+  for (i=0; i<oldnall; ++i) lroot[i] = -1;
   for (i=0; i<nall; ++i) lnext[i] = -1;
 
   // loop over all local atoms and find out in which of the local first frame voronoi cells the are in
   // (need to loop over ghosts, too, to get correct occupation numbers for the second column)
+
   for (i=0; i<nall; ++i) {
     // again: find_voronoi_cell() should be in the common base class. Why it is not, I don't know. Ask the voro++ author.
     if ((  radstr && con_poly->find_voronoi_cell(x[i][0], x[i][1], x[i][2], rx, ry, rz, k)) ||
@@ -435,14 +421,11 @@ void ComputeVoronoi::checkOccupation()
   }
 
   // MPI sum occupation
-#ifdef NOTINPLACE
-  memcpy(sendocc, occvec, oldnatoms*sizeof(*occvec));
-  MPI_Allreduce(sendocc, occvec, oldnatoms, MPI_INT, MPI_SUM, world);
-#else
+
   MPI_Allreduce(MPI_IN_PLACE, occvec, oldnatoms, MPI_INT, MPI_SUM, world);
-#endif
 
   // determine the total number of atoms in this atom's currently occupied cell
+
   int c;
   for (i=0; i<oldnall; i++) { // loop over lroot (old voronoi cells)
     // count
@@ -461,11 +444,12 @@ void ComputeVoronoi::checkOccupation()
   }
 
   // cherry pick currently owned atoms
+  // set the new atom count in the atom's first frame voronoi cell
+  // but take into account that new atoms might have been added to
+  // the system, so we can only look up occupancy for tags that are
+  // smaller or equal to the recorded largest tag.
+
   for (i=0; i<nlocal; i++) {
-    // set the new atom count in the atom's first frame voronoi cell
-    // but take into account that new atoms might have been added to
-    // the system, so we can only look up occupancy for tags that are
-    // smaller or equal to the recorded largest tag.
     tagint mytag = atom->tag[i];
     if (mytag > oldmaxtag)
       voro[i][0] = 0;
@@ -479,6 +463,7 @@ void ComputeVoronoi::checkOccupation()
 void ComputeVoronoi::loopCells()
 {
   // invoke voro++ and fetch results for owned atoms in group
+
   voronoicell_neighbor c;
   int i;
   if (faces_flag) nfaces = 0;

@@ -95,17 +95,14 @@ void MLIAPDummyDescriptor::init()
   double cut;
   cutmax = 0.0;
   memory->create(cutsq, nelements, nelements, "mliap/descriptor/dummy:cutsq");
-  memory->create(cutghost, nelements, nelements, "mliap/descriptor/dummy:cutghost");
   for (int ielem = 0; ielem < nelements; ielem++) {
     // rcutfac set from python, is global cutoff for all elements
     cut = 2.0 * radelem[ielem] * rcutfac;
     if (cut > cutmax) cutmax = cut;
     cutsq[ielem][ielem] = cut * cut;
-    cutghost[ielem][ielem] = cut * cut;
     for (int jelem = ielem + 1; jelem < nelements; jelem++) {
       cut = (radelem[ielem] + radelem[jelem]) * rcutfac;
       cutsq[ielem][jelem] = cutsq[jelem][ielem] = cut * cut;
-      cutghost[ielem][jelem] = cutghost[jelem][ielem] = cut * cut;
     }
   }
 }
@@ -114,7 +111,8 @@ void MLIAPDummyDescriptor::set_elements(char **elems, int nelems)
 {
   nelements = nelems;
   elements = new char *[nelems];
-  for (int i = 0; i < nelems; i++) { elements[i] = utils::strdup(elems[i]); }
+  for (int i = 0; i < nelems; i++) elements[i] = utils::strdup(elems[i]);
+  allocated_elements = 1;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -253,7 +251,7 @@ void LAMMPS_NS::update_pair_energy(MLIAPData *data, double *eij)
     double e = 0.5 * eij[ii];
 
     // must not count any contribution where i is not a local atom
-    if (i < nlistatoms) {
+    if (i < data->nlocal) {
       data->eatoms[i] += e;
       e_total += e;
     }
@@ -267,24 +265,22 @@ void LAMMPS_NS::update_pair_energy(MLIAPData *data, double *eij)
 
 void LAMMPS_NS::update_pair_forces(MLIAPData *data, double *fij)
 {
-  const auto nlistatoms = data->nlistatoms;
+  //Bugfix: need to account for Null atoms in local atoms
+  //const auto nlistatoms = data->nlistatoms;
   double **f = data->f;
   for (int ii = 0; ii < data->npairs; ii++) {
     int ii3 = ii * 3;
     int i = data->pair_i[ii];
     int j = data->jatoms[ii];
 
-    // must not count any contribution where i is not a local atom
-    if (i < nlistatoms) {
-      f[i][0] += fij[ii3];
-      f[i][1] += fij[ii3 + 1];
-      f[i][2] += fij[ii3 + 2];
-      f[j][0] -= fij[ii3];
-      f[j][1] -= fij[ii3 + 1];
-      f[j][2] -= fij[ii3 + 2];
+    f[i][0] += fij[ii3];
+    f[i][1] += fij[ii3 + 1];
+    f[i][2] += fij[ii3 + 2];
+    f[j][0] -= fij[ii3];
+    f[j][1] -= fij[ii3 + 1];
+    f[j][2] -= fij[ii3 + 2];
 
-      if (data->vflag) data->pairmliap->v_tally(i, j, &fij[ii3], data->rij[ii]);
-    }
+    if (data->vflag) data->pairmliap->v_tally(i, j, &fij[ii3], data->rij[ii]);
   }
 }
 

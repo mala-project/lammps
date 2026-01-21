@@ -16,6 +16,8 @@
 
 #include "pointers.h"
 
+#include "json_fwd.h"
+
 namespace LAMMPS_NS {
 
 class Molecule : protected Pointers {
@@ -24,6 +26,9 @@ class Molecule : protected Pointers {
   int nset;    // if first in set, # of molecules in this set
                // else 0 if not first in set
   int last;    // 1 if last molecule in set, else 0
+
+  std::string title;    // title string of the molecule file
+  int fileiarg;         // argument index of the current file. For error messages
 
   // number of atoms,bonds,etc in molecule
   // nibody,ndbody = # of integer/double fields in body
@@ -41,7 +46,7 @@ class Molecule : protected Pointers {
 
   // 1 if attribute defined in file, 0 if not
 
-  int xflag, typeflag, moleculeflag, fragmentflag, qflag, radiusflag, rmassflag;
+  int xflag, typeflag, moleculeflag, fragmentflag, qflag, radiusflag, muflag, rmassflag;
   int bondflag, angleflag, dihedralflag, improperflag;
   int nspecialflag, specialflag;
   int shakeflag, shakeflagflag, shakeatomflag, shaketypeflag;
@@ -63,6 +68,7 @@ class Molecule : protected Pointers {
   double *q;           // charge on each atom
   double *radius;      // radius of each atom
   double *rmass;       // mass of each atom
+  double **mu;         // dipole vector of each atom
 
   int *num_bond;    // bonds, angles, dihedrals, impropers for each atom
   int **bond_type;
@@ -118,8 +124,12 @@ class Molecule : protected Pointers {
   double *quat_external;    // orientation imposed by external class
                             // e.g. FixPour or CreateAtoms
 
-  Molecule(class LAMMPS *, int, char **, int &);
+  Molecule(class LAMMPS *);
   ~Molecule() override;
+
+  void command(int, char **, int &);
+  void from_json(const std::string &id, const json &);
+
   void compute_center();
   void compute_mass();
   void compute_com();
@@ -128,11 +138,10 @@ class Molecule : protected Pointers {
   void check_attributes();
 
  private:
-  int me;
   FILE *fp;
   int *count;
   int toffset, boffset, aoffset, doffset, ioffset;
-  int autospecial;
+  int json_format;
   double sizescale;
 
   void read(int);
@@ -142,6 +151,7 @@ class Molecule : protected Pointers {
   void fragments(char *);
   void charges(char *);
   void diameters(char *);
+  void dipoles(char *);
   void masses(char *);
   void bonds(int, char *);
   void angles(int, char *);
@@ -163,6 +173,7 @@ class Molecule : protected Pointers {
   std::string parse_keyword(int, char *);
   void skip_lines(int, char *, const std::string &);
 
+  void stats();
   // void print();
 };
 

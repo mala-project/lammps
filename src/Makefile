@@ -1,7 +1,7 @@
 # LAMMPS multiple-machine -*- Makefile -*-
 
 SHELL = /bin/bash
-PYTHON = python
+PYTHON = $(word 3,$(shell type python3))
 DYN_LIB = -ldl
 
 #.IGNORE:
@@ -44,13 +44,16 @@ endif
 # PACKLIB    = all packages that require an additional lib
 #              should be PACKSYS + PACKINT + PACKEXT
 # PACKSYS    = subset that reqiure a common system library
-#              include MPIIO and LB b/c require full MPI, not just STUBS
+#              include LATBOLTZ b/c it requires a full MPI, not just STUBS
 # PACKINT    = subset that require an internal (provided) library
 # PACKEXT    = subset that require an external (downloaded) library
 
 PACKAGE = \
+	molecule \
+	kspace \
 	adios \
 	amoeba \
+	apip \
 	asphere \
 	awpmd \
 	bocs \
@@ -72,6 +75,7 @@ PACKAGE = \
 	dpd-smooth \
 	drude \
 	eff \
+	extra-command \
 	extra-compute \
 	extra-dump \
 	extra-fix \
@@ -85,7 +89,6 @@ PACKAGE = \
 	interlayer \
 	kim \
 	kokkos \
-	kspace \
 	latboltz \
 	lepton \
 	machdyn \
@@ -103,11 +106,9 @@ PACKAGE = \
 	ml-quip \
 	ml-rann \
 	ml-snap \
+	ml-uf3 \
 	mofff \
-	molecule \
 	molfile \
-	mpiio \
-	mscg \
 	netcdf \
 	openmp \
 	opt \
@@ -124,6 +125,7 @@ PACKAGE = \
 	reaction \
 	reaxff \
 	replica \
+	rheo \
 	rigid \
 	scafacos \
 	shock \
@@ -145,9 +147,11 @@ PACKAGE = \
 # NOTE: the last four packages must remain at the end since
 # they depend on other packages to be installed first.
 
-PACKBASIC = kspace manybody molecule rigid
+PACKBASIC = molecule kspace manybody rigid
 
 PACKMOST = \
+	kspace \
+	molecule \
 	amoeba \
 	asphere \
 	bocs \
@@ -167,6 +171,7 @@ PACKMOST = \
 	dpd-smooth \
 	drude \
 	eff \
+	extra-command \
 	extra-compute \
 	extra-dump \
 	extra-fix \
@@ -175,7 +180,6 @@ PACKMOST = \
 	fep \
 	granular \
 	interlayer \
-	kspace \
 	manybody \
 	mc \
 	meam \
@@ -183,7 +187,6 @@ PACKMOST = \
 	misc \
 	ml-snap \
 	mofff \
-	molecule \
 	openmp \
 	opt \
 	orient \
@@ -213,12 +216,11 @@ PACKLIB = \
 	kim \
 	kokkos \
 	lepton \
-	mpiio \
-	mscg \
 	poems \
 	python \
 	voronoi \
 	adios \
+	apip \
 	atc \
 	awpmd \
 	colvars \
@@ -234,17 +236,19 @@ PACKLIB = \
 	plumed \
 	qmmm \
 	ml-quip \
+	rheo \
 	scafacos \
 	machdyn \
 	vtk \
 	electrode
 
-PACKSYS = compress latboltz mpiio python
+PACKSYS = compress latboltz python
 
 PACKINT = atc awpmd colvars electrode gpu kokkos lepton ml-pod poems
 
 PACKEXT = \
 	adios \
+	apip \
 	h5md \
 	kim \
 	machdyn \
@@ -252,10 +256,10 @@ PACKEXT = \
 	ml-pace \
 	ml-quip \
 	molfile \
-	mscg \
 	netcdf \
 	plumed \
 	qmmm \
+	rheo \
 	scafacos \
 	voronoi \
 	vtk \
@@ -275,7 +279,6 @@ LIBDIR = $(@:lib-%=%)
 # List of all targets
 
 help:
-	@echo ''
 	@echo 'make clean-all           delete all object files'
 	@echo 'make clean-machine       delete object files for one machine'
 	@echo 'make mpi-stubs           build dummy MPI library in STUBS'
@@ -479,7 +482,7 @@ tar:
 	@cd STUBS; $(MAKE)
 	@echo "Created $(ROOT)_src.tar.gz"
 
-check: check-whitespace check-permissions check-homepage check-errordocs check-version
+check: check-whitespace check-permissions check-homepage check-errordocs check-fmtlib check-docs check-version
 
 check-whitespace:
 	$(PYTHON) ../tools/coding_standard/whitespace.py ..
@@ -505,15 +508,23 @@ check-errordocs:
 fix-errordocs:
 	$(PYTHON) ../tools/coding_standard/errordocs.py .. -f
 
+check-fmtlib:
+	$(PYTHON) ../tools/coding_standard/fmtlib.py ..
+
+fix-fmtlib:
+	$(PYTHON) ../tools/coding_standard/fmtlib.py .. -f
+
+check-docs:
+	$(MAKE) $(MFLAGS) -C ../doc anchor_check style_check package_check role_check
+
 check-version:
-	$(PYTHON) ../tools/coding_standard/versiontags.py ..
+	$(PYTHON) ../tools/coding_standard/versiontags.py .. || echo
 
 format-src:
 	clang-format -i --verbose --style=file *.cpp *.h */*.cpp */*.h
 
 format-tests:
 	clang-format -i --verbose --style=file ../unittest/*/*.cpp ../unittest/*/*.h
-
 
 # Package management
 

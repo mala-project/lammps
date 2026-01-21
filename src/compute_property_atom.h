@@ -95,6 +95,8 @@ class ComputePropertyAtom : public Compute {
   void pack_omegax(int);
   void pack_omegay(int);
   void pack_omegaz(int);
+  void pack_temperature(int);
+  void pack_heatflow(int);
   void pack_angmomx(int);
   void pack_angmomy(int);
   void pack_angmomz(int);
@@ -135,6 +137,11 @@ class ComputePropertyAtom : public Compute {
   void pack_d2name(int);
 
   void pack_atom_style(int);
+
+  void pack_apip_lambda(int);
+  void pack_apip_lambda_input(int);
+  void pack_apip_e_fast(int);
+  void pack_apip_e_precise(int);
 };
 
 }    // namespace LAMMPS_NS

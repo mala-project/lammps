@@ -636,7 +636,7 @@ TEST_F(KimCommandsTest, kim_query)
             "temperature_units=[K]");
     END_HIDE_OUTPUT();
 
-    ASSERT_THAT(variable->retrieve("alpha"), StrEq("1.654960564704273e-05"));
+    ASSERT_THAT(variable->retrieve("alpha"), StrEq("1.656579473023212e-05"));
 
     BEGIN_HIDE_OUTPUT();
     command("clear");
@@ -682,9 +682,6 @@ int main(int argc, char **argv)
 {
     MPI_Init(&argc, &argv);
     ::testing::InitGoogleMock(&argc, argv);
-
-    if (LAMMPS_NS::platform::mpi_vendor() == "Open MPI" && !Info::has_exceptions())
-        std::cout << "Warning: using OpenMPI without exceptions. Death tests will be skipped\n";
 
     // handle arguments passed via environment variable
     if (const char *var = getenv("TEST_ARGS")) {

@@ -42,6 +42,7 @@
 #include "comm.h"
 #include "error.h"
 #include "force.h"
+#include "info.h"
 #include "math_special.h"
 #include "memory.h"
 #include "neigh_list.h"
@@ -437,7 +438,9 @@ void PairBOP::init_style()
 
 double PairBOP::init_one(int i, int j)
 {
-  if (setflag[i][j] == 0) error->all(FLERR,"All pair coeffs are not set");
+  if (setflag[i][j] == 0)
+    error->all(FLERR, Error::NOLASTLINE,
+               "All pair coeffs are not set. Status\n" + Info::get_pair_coeff_status(lmp));
 
   int itype = map[i];
   int jtype = map[j];
@@ -1873,7 +1876,7 @@ void PairBOP::read_table(char *filename)
       reader = new PotentialFileReader(lmp, filename, "BOP");
       bop_types = reader->next_int();
       if (bop_types <= 0)
-        error->one(FLERR,fmt::format("BOP potential file with {} elements",bop_types));
+        error->one(FLERR,"BOP potential file with {} elements",bop_types);
 
       bop_elements = new char*[bop_types];
       bop_masses = new double[bop_types];
@@ -2221,8 +2224,7 @@ void PairBOP::write_tables(int npts)
       int param = elem2param[i][j];
       PairParameters & pair = pairParameters[param];
 
-      filename = fmt::format("{}{}_Pair_SPR_{}",bop_elements[i],
-                             bop_elements[j],comm->me);
+      filename = fmt::format("{}{}_Pair_SPR_{}",bop_elements[i],bop_elements[j],comm->me);
 
       fp = fopen(filename.c_str(), "w");
       xmin = (pair.betaS)->get_xmin();
@@ -2240,8 +2242,7 @@ void PairBOP::write_tables(int npts)
       fclose(fp);
 
       if (pair.cutL != 0) {
-        filename = fmt::format("{}{}_Pair_L_{}",bop_elements[i],
-                               bop_elements[j],comm->me);
+        filename = fmt::format("{}{}_Pair_L_{}",bop_elements[i],bop_elements[j],comm->me);
         fp = fopen(filename.c_str(), "w");
         xmin = (pair.cphi)->get_xmin();
         xmax = (pair.cphi)->get_xmax();
@@ -2254,8 +2255,7 @@ void PairBOP::write_tables(int npts)
         }
         fclose(fp);
       }
-      filename = fmt::format("{}{}_Pair_BO_{}", bop_elements[i],
-                             bop_elements[j], comm->me);
+      filename = fmt::format("{}{}_Pair_BO_{}", bop_elements[i],bop_elements[j], comm->me);
       fp = fopen(filename.c_str(), "w");
       xmin = (pair.bo)->get_xmin();
       xmax = (pair.bo)->get_xmax();

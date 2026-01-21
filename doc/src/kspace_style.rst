@@ -32,6 +32,7 @@
 .. index:: kspace_style msm/cg/omp
 .. index:: kspace_style msm/dielectric
 .. index:: kspace_style scafacos
+.. index:: kspace_style zero
 
 kspace_style command
 ====================
@@ -43,7 +44,7 @@ Syntax
 
    kspace_style style value
 
-* style = *none* or *ewald* or *ewald/dipole* or *ewald/dipole/spin* or *ewald/disp* or *ewald/disp/dipole* or *ewald/omp* or *ewald/electrode* or *pppm* or *pppm/cg* or *pppm/disp* or *pppm/tip4p* or *pppm/stagger* or *pppm/disp/tip4p* or *pppm/gpu* or *pppm/intel* or *pppm/disp/intel* or *pppm/kk* or *pppm/omp* or *pppm/cg/omp* or *pppm/disp/tip4p/omp* or *pppm/tip4p/omp* or *pppm/dielectic* or *pppm/disp/dielectric* or *pppm/electrode* or *pppm/electrode/intel* or *msm* or *msm/cg* or *msm/omp* or *msm/cg/omp* or *msm/dielectric* or *scafacos*
+* style = *none* or *ewald* or *ewald/dipole* or *ewald/dipole/spin* or *ewald/disp* or *ewald/disp/dipole* or *ewald/omp* or *ewald/electrode* or *pppm* or *pppm/cg* or *pppm/disp* or *pppm/tip4p* or *pppm/stagger* or *pppm/disp/tip4p* or *pppm/gpu* or *pppm/intel* or *pppm/disp/intel* or *pppm/kk* or *pppm/omp* or *pppm/cg/omp* or *pppm/disp/tip4p/omp* or *pppm/tip4p/omp* or *pppm/dielectic* or *pppm/disp/dielectric* or *pppm/electrode* or *pppm/electrode/intel* or *msm* or *msm/cg* or *msm/omp* or *msm/cg/omp* or *msm/dielectric* or *scafacos* or *zero*
 
   .. parsed-literal::
 
@@ -121,6 +122,7 @@ Syntax
        *scafacos* values = method accuracy
          method = fmm or p2nfft or p3m or ewald or direct
          accuracy = desired relative error in forces
+       *zero* value = none
 
 Examples
 """"""""
@@ -132,6 +134,7 @@ Examples
    kspace_style msm 1.0e-4
    kspace_style scafacos fmm 1.0e-4
    kspace_style none
+   kspace_style zero
 
 Used in input scripts:
 
@@ -375,6 +378,13 @@ other ScaFaCoS options currently exposed to LAMMPS.
 
 ----------
 
+.. versionadded:: 12Jun2025
+
+The *zero* style does not do any calculations, but is compatible
+with all pair styles that require some version of a kspace style.
+
+----------
+
 The specified *accuracy* determines the relative RMS error in per-atom
 forces calculated by the long-range solver.  It is set as a
 dimensionless number, relative to the force that two unit point
@@ -450,7 +460,10 @@ relative RMS error.
   For the KOKKOS package, the *pppm/kk* style performs charge
   assignment and force interpolation calculations, along with the FFTs
   themselves, on the GPU or (optionally) threaded on the CPU when
-  using OpenMP and FFTW3.
+  using OpenMP and FFTW3. The specific FFT library is selected using
+  the FFT_KOKKOS CMake parameter. See the
+  :doc:`Build settings <Build_settings>` doc page for how to select a
+  3rd-party FFT library.
 
 ----------
 
